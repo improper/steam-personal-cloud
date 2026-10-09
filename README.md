@@ -21,12 +21,12 @@ A **self-hosted Steam capture backup and Immich ingest pipeline**. Steam clients
 ```bash
 git clone https://github.com/improper/steam-personal-cloud.git
 cd steam-personal-cloud
-bash scripts/setup-host.sh   # prompts for bind IP, Immich URL, hidden API key, album, storage
+bash scripts/setup-host.sh   # prompts for bind IP/port, Immich URL, hidden API key, album, storage
 docker compose up -d --build
 docker compose logs -f personal-cloud
 ```
 
-Keep `.env` **on the host**: never commit or publish it. If the folder is not writable by the container, adjust ownership of the storage folder to the container user. `SPC_TOKEN` in `.env` is the secret needed for each client to connect. Use a dedicated Immich API key for a dedicated account if desired.
+Set `SPC_BIND_PORT` in your Compose environment if you need a non-default host port (default `8787`; the container always listens on `8787`). Keep `.env` **on the host**: never commit or publish it. If the folder is not writable by the container, adjust ownership of the storage folder to the container user. `SPC_TOKEN` in `.env` is the secret needed for each client to connect. Use a dedicated Immich API key for a dedicated account if desired.
 
 ## Set up the Xubuntu gamecenter
 
