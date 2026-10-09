@@ -1,12 +1,12 @@
 # Steam Personal Cloud — prototype v0.2
 
-A **self-hosted Steam capture backup and Immich ingest pipeline**. Steam clients only read completed-enough files and send them at a capped rate; the family server does FFmpeg processing and Immich uploads. Steam's original files are never modified or deleted.
+A **self-hosted Steam capture backup and Immich ingest pipeline**. Steam clients only read completed-enough files and send them at a configurable rate; the family server does FFmpeg processing and Immich uploads. Steam's original files are never modified or deleted.
 
 > **Early prototype.** Steam's segmented video format varies by Steam version, recording type and session. DASH remuxing is implemented, but has **not yet been validated with the actual recordings from the Xubuntu gamecenter**. Rolling buffer preservation across overwritten chunks is not guaranteed; do not rely on this as your only copy. Keep Steam's recording storage and local backup until verified.
 
 ## Components
 
-- `client/agent.py`: Python standard-library file sender. Scans screenshot/recording directories every minute with a systemd **user** timer, sends new/changed `.png/.jpg/.webp/.mpd/.m4s/.pb/.mp4` files with SHA-256 and 2 MiB/s default rate cap. Skips recently written files and symlinks; retries on failure. No FFmpeg, Node, or Immich credentials on game clients.
+- `client/agent.py`: Python standard-library file sender. Scans screenshot/recording directories every minute with a systemd **user** timer, sends new/changed `.png/.jpg/.webp/.mpd/.m4s/.pb/.mp4` files with SHA-256 and unlimited upload speed by default (`0` MiB/s), or an optional client-side rate cap. Skips recently written files and symlinks; retries on failure. No FFmpeg, Node, or Immich credentials on game clients.
 - `server/app.py`: one FastAPI receiver / worker with persistent SQLite state. Keeps uploaded originals; considers video sessions idle after 10 minutes, then attempts lossless DASH→MP4 remux on the server. Uploads media to Immich, adds it to a `Game Center` album and applies hierarchical tags for account, client, game ID, date, and screenshot/video.
 - `server/dashboard.html`: dark 1080p-friendly status page supporting Steam Input keyboard mapping and the browser Gamepad API. Shows counts and per-media statuses, not yet native Godot.
 
@@ -37,7 +37,7 @@ sudo apt install ./steam-personal-cloud-client_*_all.deb
 steam-personal-cloud-setup
 ```
 
-The setup command prompts for server URL, a one-time Fast Connect code, Steam account, capture directories and bandwidth cap. It enables your user systemd timer. The package places the Python agent and timer system-wide; future package upgrades update the agent without pairing again. It does not configure the server or upload files until you run setup. To view the server dashboard from Steam, add the `Steam Personal Cloud` desktop launcher as a non-Steam game, or run `steam-personal-cloud-dashboard`.
+The setup command prompts for server URL, a one-time Fast Connect code, Steam account, capture directories and bandwidth setting (enter `0` for unlimited; this is the default). It enables your user systemd timer. The package places the Python agent and timer system-wide; future package upgrades update the agent without pairing again. It does not configure the server or upload files until you run setup. To view the server dashboard from Steam, add the `Steam Personal Cloud` desktop launcher as a non-Steam game, or run `steam-personal-cloud-dashboard`.
 
 This is a **lightweight client and browser launcher**, not yet a native gamepad UI. Local recording reconstruction still occurs on the server.
 
@@ -58,6 +58,8 @@ Default media sources:
 - Steam local account directory `userdata/728364463` (used as a tag; this is *not* the Steam64 account ID).
 
 For **Fast Connect**: log into the family-server dashboard with the admin `SPC_TOKEN`, click **Pair device**, and enter its one-time code when the client installer asks. The installer receives a random device token scoped to that client and Steam account; it saves that token with mode 0600. An existing token can still be entered using installer option 2. Each code expires after five minutes and cannot be redeemed twice.
+
+The default upload speed is **unlimited** (`max_mib_per_second: 0`). Set a positive MiB/s value in `~/.config/steam-personal-cloud/client.json` if you prefer a cap. Existing client installations retain their saved setting after upgrades. Unlimited transfers can compete with games for Wi-Fi bandwidth and disk I/O.
 
 The user timer runs approximately once per minute. A first backfill of an existing recording may take a while over Wi-Fi. The client uploads its original fragments, **not a new MP4**.
 

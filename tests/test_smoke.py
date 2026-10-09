@@ -33,5 +33,29 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(len(agent.sha256_file(f)), 64)
             self.assertTrue(agent.fingerprint(f, f.stat()).startswith('4:'))
 
+    def test_unlimited_upload_does_not_throttle(self):
+        from unittest.mock import patch
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'capture.png'
+            path.write_bytes(b'PNG')
+            class FakeResponse:
+                status = 201
+                def read(self, size):
+                    return b'{}'
+            class FakeConnection:
+                def __init__(self, *args, **kwargs):
+                    self.chunks = []
+                def putrequest(self, *args): pass
+                def putheader(self, *args): pass
+                def endheaders(self): pass
+                def send(self, data):
+                    self.chunks.append(data)
+                def getresponse(self):
+                    return FakeResponse()
+                def close(self): pass
+            with patch.object(agent.http.client, 'HTTPConnection', FakeConnection), patch.object(agent.time, 'sleep') as sleeper:
+                agent.send_file('http://example.test:8787', 'token', 'gamecenter', '728364463', path, 'screenshots/capture.png', path.stat(), agent.sha256_file(path), 0)
+                sleeper.assert_not_called()
+
 if __name__ == '__main__':
     unittest.main()

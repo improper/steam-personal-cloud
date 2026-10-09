@@ -18,8 +18,8 @@ read -rp "Screenshots [$HOME/Gameplay/Screenshots]: " shots
 shots=${shots:-$HOME/Gameplay/Screenshots}
 read -rp "Recording storage [$HOME/Gameplay/Recordings]: " recordings
 recordings=${recordings:-$HOME/Gameplay/Recordings}
-read -rp 'Maximum upload MiB/sec [2]: ' bandwidth
-bandwidth=${bandwidth:-2}
+read -rp 'Maximum upload MiB/sec (0 = unlimited) [0]: ' bandwidth
+bandwidth=${bandwidth:-0}
 [[ "$client_id" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$ ]] || { echo 'Invalid client name'; exit 1; }
 [[ "$account" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$ ]] || { echo 'Invalid account'; exit 1; }
 [[ "$bandwidth" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo 'Invalid bandwidth'; exit 1; }

@@ -139,7 +139,7 @@ def sync(config: dict):
                     continue
                 send_file(config['server'], config['token'], config['client_id'],
                           config['steam_account'], path, remote, stat, sha,
-                          float(config.get('max_mib_per_second', 2)))
+                          float(config.get('max_mib_per_second', 0)))
                 if fingerprint(path, path.stat()) != fp:
                     LOG.info('Changed during transfer; will retry: %s', remote)
                     continue
