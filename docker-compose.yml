@@ -1,0 +1,20 @@
+services:
+  personal-cloud:
+    build: ./server
+    restart: unless-stopped
+    ports:
+      - "${SPC_BIND:-192.168.1.27}:8787:8787"
+    environment:
+      SPC_DATA_DIR: /data
+      SPC_TOKEN: ${SPC_TOKEN:?Run scripts/setup-host.sh first}
+      IMMICH_URL: ${IMMICH_URL:?Immich URL required}
+      IMMICH_API_KEY: ${IMMICH_API_KEY:?API key required}
+      IMMICH_ALBUM: ${IMMICH_ALBUM:-Game Center}
+      SPC_IDLE_SECONDS: ${SPC_IDLE_SECONDS:-600}
+      SPC_WORKER_INTERVAL: 30
+      SPC_MAX_UPLOAD_MB: 128
+    volumes:
+      - ${SPC_HOST_STORAGE:-./storage}:/data
+    security_opt:
+      - no-new-privileges:true
+    init: true
