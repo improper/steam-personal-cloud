@@ -1,41 +1,43 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-VERSION=${1:-0.2.0~preview.1}
+VERSION=${1:-0.3.0~preview.1}
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(~[a-z0-9.]+)?$ ]] || { echo "Invalid Debian version: $VERSION" >&2; exit 1; }
-command -v dpkg-deb >/dev/null || { echo "Install dpkg-dev" >&2; exit 1; }
-for p in client/agent.py client/setup.py client/local_status.py client/local_dashboard.py client/local_dashboard.html client/steam-personal-cloud-ui.service client/steam-personal-cloud-sync.service client/steam-personal-cloud-sync.timer scripts/install-linux.sh packaging/steam-personal-cloud-dashboard packaging/steam-personal-cloud-setup packaging/steam-personal-cloud.desktop; do
-  test -f "$p" || { echo "Missing $p" >&2; exit 1; }
+command -v dpkg-deb >/dev/null || { echo "Install dpkg-deb" >&2; exit 1; }
+for file in agent.py setup.py local_status.py local_dashboard.py local_dashboard.html gallery_app.py gallery_model.py gallery_trash.py gamepad_linux.py; do
+    test -f "client/$file" || { echo "Missing client/$file" >&2; exit 1; }
 done
 root=$(mktemp -d)
 trap 'rm -rf "$root"' EXIT
 pkg="$root/pkg"
-install -d "$pkg/DEBIAN" "$pkg/usr/lib/steam-personal-cloud" "$pkg/usr/lib/systemd/user" "$pkg/usr/bin" "$pkg/usr/share/applications" "$pkg/usr/share/steam-personal-cloud/scripts"
-install -m 644 client/agent.py "$pkg/usr/lib/steam-personal-cloud/agent.py"
-install -m 644 client/local_status.py "$pkg/usr/lib/steam-personal-cloud/local_status.py"
-install -m 644 client/local_dashboard.py "$pkg/usr/lib/steam-personal-cloud/local_dashboard.py"
-install -m 644 client/local_dashboard.html "$pkg/usr/lib/steam-personal-cloud/local_dashboard.html"
+install -d "$pkg/DEBIAN" "$pkg/usr/lib/steam-personal-cloud" "$pkg/usr/lib/systemd/user" "$pkg/usr/bin" \
+  "$pkg/usr/share/applications" "$pkg/usr/share/icons/hicolor/scalable/apps" "$pkg/usr/share/steam-personal-cloud/scripts"
+for file in agent.py local_status.py local_dashboard.py local_dashboard.html gallery_app.py gallery_model.py gallery_trash.py gamepad_linux.py; do
+    install -m 644 "client/$file" "$pkg/usr/lib/steam-personal-cloud/$file"
+done
 install -m 644 client/steam-personal-cloud-ui.service "$pkg/usr/lib/systemd/user/steam-personal-cloud-ui.service"
-install -m 644 client/setup.py "$pkg/usr/share/steam-personal-cloud/scripts/setup.py"
 sed 's#%h/.local/share/steam-personal-cloud/agent.py#/usr/lib/steam-personal-cloud/agent.py#' client/steam-personal-cloud-sync.service > "$pkg/usr/lib/systemd/user/steam-personal-cloud-sync.service"
 install -m 644 client/steam-personal-cloud-sync.timer "$pkg/usr/lib/systemd/user/steam-personal-cloud-sync.timer"
+install -m 755 client/setup.py "$pkg/usr/share/steam-personal-cloud/scripts/setup.py"
 install -m 755 scripts/install-linux.sh "$pkg/usr/share/steam-personal-cloud/scripts/install-linux.sh"
-install -m 755 packaging/steam-personal-cloud-setup "$pkg/usr/bin/steam-personal-cloud-setup"
-install -m 755 packaging/steam-personal-cloud-dashboard "$pkg/usr/bin/steam-personal-cloud-dashboard"
+for tool in steam-personal-cloud-setup steam-personal-cloud-dashboard steam-personal-cloud-gallery; do
+    install -m 755 "packaging/$tool" "$pkg/usr/bin/$tool"
+done
 install -m 644 packaging/steam-personal-cloud.desktop "$pkg/usr/share/applications/steam-personal-cloud.desktop"
+install -m 644 packaging/steam-personal-cloud-gallery.desktop "$pkg/usr/share/applications/steam-personal-cloud-gallery.desktop"
+install -m 644 packaging/steam-personal-cloud.svg "$pkg/usr/share/icons/hicolor/scalable/apps/steam-personal-cloud.svg"
 cat > "$pkg/DEBIAN/control" <<EOF
 Package: steam-personal-cloud-client
 Version: $VERSION
-Section: utils
+Section: games
 Priority: optional
 Architecture: all
 Maintainer: Steam Personal Cloud Contributors <noreply@github.com>
-Depends: python3 (>= 3.10), systemd, xdg-utils
-Description: Steam Personal Cloud lightweight media backup client
- Background Steam screenshot and game recording fragment sync to a self-hosted
- Steam Personal Cloud server, with Fast Connect pairing, repair wizard, and
- local library and sync status dashboard.
- Run steam-personal-cloud-setup as the desktop user to finish configuration.
+Depends: python3 (>= 3.10), python3-pyqt6, python3-pyqt6.qtmultimedia, systemd, xdg-utils
+Description: Steam Personal Cloud native gallery and backup client
+ Native Steam Input-friendly Qt6 gallery for screenshots and Immich videos,
+ with background file sync, secure pairing, live status and media actions.
+ Run steam-personal-cloud-setup as desktop user after installing.
 EOF
 install -d dist
 dpkg-deb --root-owner-group --build "$pkg" "dist/steam-personal-cloud-client_${VERSION}_all.deb"

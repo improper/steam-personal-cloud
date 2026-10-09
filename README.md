@@ -50,6 +50,13 @@ Run `steam-personal-cloud-setup` again to **check or repair an existing installa
 
 The local dashboard is read-only and listens only on `127.0.0.1:18787`; it does not open a new inbound service to the LAN.
 
+
+## Native Steam-like gallery (v0.3 preview)
+
+**Steam Personal Cloud Gallery** is a fullscreen-capable **native Qt6 Linux application**, separate from the technical **Steam Personal Cloud Diagnostics** browser dashboard. Install the newest Ubuntu `.deb`, then add `Steam Personal Cloud Gallery` to Steam from the Xubuntu Games menu, or browse to `/usr/bin/steam-personal-cloud-gallery` as a non-Steam game. It displays large, selectable screenshot/video tiles, local/backup/Immich progress badges, optional details, and periodic refresh. The app supports Steam Input mapped to directional keys/Enter/Escape and tries the available Linux gamepad device (best effort). Screenshot viewing works before upload; video playback starts once processed by Immich using authenticated byte-range streaming. Deletion asks separately for **Local**, **Immich**, or **Both**, then confirms. Local media goes to Xubuntu Trash, Immich assets to Immich Trash (never forced permanent deletion). The original server inbox archive is not automatically erased.
+
+Details and hardware caveats are in [docs/native-gallery.md](docs/native-gallery.md). This is an unvalidated preview on the Xubuntu MacBook hardware until a real controller/recording playback test succeeds.
+
 ## Set up the Xubuntu gamecenter from source (alternative)
 
 From the same clone (or a downloaded source archive):

@@ -209,12 +209,13 @@ def install_units(package_mode):
     commands = [
         ['systemctl', '--user', 'daemon-reload'],
         ['systemctl', '--user', 'enable', '--now', 'steam-personal-cloud-sync.timer'],
+        ['systemctl', '--user', 'enable', '--now', 'steam-personal-cloud-ui.service'],
     ]
     for command in commands:
         try:
             subprocess.run(command, check=True, timeout=25)
         except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            print(f'  Warning: could not enable sync ({exc}).')
+            print(f'  Warning: could not enable a background service ({exc}).')
             print('  Retry after login: systemctl --user enable --now steam-personal-cloud-sync.timer')
             return False
     return True

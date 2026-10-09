@@ -85,5 +85,5 @@ def local_snapshot(config_path=None, state_dir=None, check_remote=True):
         payload['remote'] = {'connected': remote is not None, 'error': error,
                              'counts': (remote or {}).get('counts', {}),
                              'files_backed_up': (remote or {}).get('files_backed_up', 0),
-                             'items': (remote or {}).get('items', [])[:30]}
+                             'items': (remote or {}).get('items', [])[:500]}
     return payload

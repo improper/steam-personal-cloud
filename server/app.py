@@ -127,7 +127,7 @@ def register_media(db, client, account, rel, now):
         return
     db.execute('''INSERT INTO media(key,client,account,source,kind,status,updated_at)
         VALUES(?,?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET
-        status=CASE WHEN media.status='complete' THEN 'complete' ELSE 'queued' END,
+        status=CASE WHEN media.status IN ('complete','deleted') THEN media.status ELSE 'queued' END,
         updated_at=excluded.updated_at''',
         (key, client, account, source, kind, 'queued', now))
 
@@ -156,7 +156,7 @@ def upsert_file(db, client, account, rel, sha, size, mtime, timestamp):
     register_media(db, client, account, rel, timestamp)
     ensure_recording_index(db, client, account, rel, timestamp)
     if rel.startswith('screenshots/'):
-        db.execute("UPDATE media SET status='queued', retry_at=0 WHERE key=?", (full,))
+        db.execute("UPDATE media SET status='queued', retry_at=0 WHERE key=? AND status!='deleted'", (full,))
     return True
 
 
@@ -254,7 +254,7 @@ def fingerprint_session(db, source):
 def processing_once():
     """One serial worker iteration; retry failures after two minutes."""
     with process_lock, db_open() as db:
-        rows = db.execute("SELECT * FROM media WHERE status!='complete' AND retry_at<=? "
+        rows = db.execute("SELECT * FROM media WHERE status NOT IN ('complete','deleted') AND retry_at<=? "
                           'ORDER BY updated_at ASC LIMIT 12', (time.time(),)).fetchall()
         for row in rows:
             item = dict(row)
@@ -321,12 +321,12 @@ async def lifespan(app):
     worker.join(timeout=3)
 
 
-app = FastAPI(title='Steam Personal Cloud', version='0.2.0-preview', lifespan=lifespan)
+app = FastAPI(title='Steam Personal Cloud', version='0.3.0-preview', lifespan=lifespan)
 
 
 @app.get('/health')
 def health():
-    return {'status': 'ok', 'version': '0.2.0-preview', 'immich_configured': bool(IMMICH_URL and IMMICH_KEY)}
+    return {'status': 'ok', 'version': '0.3.0-preview', 'immich_configured': bool(IMMICH_URL and IMMICH_KEY)}
 
 
 @app.put('/api/files/{client}/{account}/{rel:path}')
@@ -385,7 +385,7 @@ def status(x_spc_token: Optional[str] = Header(default=None)):
     is_admin = authorize(x_spc_token)
     with database() as db:
         rows = db.execute('SELECT client,account,kind,source,status,immich_id,error,updated_at FROM media '
-                          'ORDER BY updated_at DESC LIMIT 150').fetchall()
+                          'ORDER BY updated_at DESC LIMIT 500').fetchall()
         total_bytes = db.execute('SELECT COALESCE(SUM(size),0) FROM files').fetchone()[0]
         sources = db.execute('SELECT COUNT(*) FROM files').fetchone()[0]
         if not is_admin:
@@ -449,3 +449,8 @@ def list_paired_devices(x_spc_token: Optional[str] = Header(default=None)):
 @app.get('/')
 def dashboard():
     return FileResponse(Path(__file__).parent / 'dashboard.html')
+
+
+# Authenticated Immich previews, ranged playback and reversible Immich Trash.
+from gallery_routes import register_gallery_routes
+register_gallery_routes(app, authorize, database, IMMICH_URL, IMMICH_KEY, immich_request)

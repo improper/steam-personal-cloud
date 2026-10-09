@@ -16,3 +16,23 @@ jobs:
       - run: bash -n scripts/install-linux.sh scripts/setup-host.sh
       - run: python -m compileall -q client server
       - run: bash -n scripts/build-client-deb.sh && bash scripts/build-client-deb.sh 0.2.0~preview.999
+
+  qt-native-smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt runtime
+        run: sudo apt-get update -qq && sudo apt-get install -y python3-pyqt6 python3-pyqt6.qtmultimedia
+      - name: Import the native Qt gallery (system Python)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          /usr/bin/python3 - <<'PY'
+          import os,sys
+          sys.path.insert(0, os.path.abspath('client'))
+          from PyQt6.QtWidgets import QApplication
+          import gallery_app
+          app=QApplication([])
+          assert gallery_app.MediaItem
+          print('Native Qt6 gallery imported successfully')
+          PY

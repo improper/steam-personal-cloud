@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=Steam Personal Cloud
-Comment=View local Steam captures, upload progress, and Immich status
+Name=Steam Personal Cloud Diagnostics
+Comment=Technical client health and sync log dashboard
 Exec=steam-personal-cloud-dashboard
-Icon=network-server
+Icon=steam-personal-cloud
 Terminal=false
-Categories=Game;Utility;
+Categories=Utility;
 StartupNotify=true
