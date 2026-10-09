@@ -34,7 +34,7 @@ QPushButton:focus { border: 3px solid #80ceff; background: #2d5476; }
 QPushButton:hover { background: #355977; }
 QPushButton#tile { background: #1a2a3f; text-align: center; padding: 10px; min-height: 166px; }
 QPushButton#tile:focus { border: 4px solid #9ae6ff; background: #2e5775; }
-QLabel#tileName { color: #e6f2ff; font-size: 15px; font-weight: 600; }
+QLabel#tileName { color: #e6f2ff; font-size: 18px; font-weight: 600; }
 QLabel#detail { color: #9db2cc; font-size: 14px; }
 QLabel#advanced { background: #17273b; padding: 16px; border-radius: 12px; font-size: 15px; }
 QDialog { background: #0e1728; }
@@ -114,7 +114,7 @@ class Tile(QWidget):
         layout.addWidget(title)
         label, color = BADGES.get(item.state, BADGES['waiting'])
         status = QLabel(label)
-        status.setStyleSheet(f'color:{color}; background:transparent; font-size:14px; font-weight:700;')
+        status.setStyleSheet(f'color:{color}; background:transparent; font-size:16px; font-weight:700;')
         layout.addWidget(status)
         if item.kind == 'photo' and item.local_path:
             self.set_preview(local_image(item.local_path))

@@ -45,14 +45,23 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def media(self, match):
+    def do_HEAD(self):
+        match = MEDIA.fullmatch(self.path)
+        if match:
+            self.media(match, head_only=True)
+        else:
+            self.send_error(404)
+
+    def media(self, match, head_only=False):
         config = read_json(Path.home() / '.config/steam-personal-cloud/client.json')
         if not isinstance(config, dict) or not config.get('server') or not config.get('token'):
             self.send_error(503, 'Not paired')
             return
         url = config['server'].rstrip('/') + '/api/media/' + match.group(1) + '/' + match.group(2)
         headers = {'X-SPC-Token': config['token']}
-        if self.headers.get('Range') and match.group(2) == 'video':
+        if match.group(2) == 'video' and head_only:
+            headers['Range'] = 'bytes=0-0'
+        elif self.headers.get('Range') and match.group(2) == 'video':
             headers['Range'] = self.headers['Range']
         req = Request(url, headers=headers)
         try:
@@ -64,6 +73,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header('Cache-Control', 'private, no-store')
                 self.send_header('X-Content-Type-Options', 'nosniff')
                 self.end_headers()
+                if head_only:
+                    return
                 while True:
                     chunk = upstream.read(128 * 1024)
                     if not chunk:
