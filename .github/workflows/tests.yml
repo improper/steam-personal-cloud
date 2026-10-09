@@ -32,7 +32,13 @@ jobs:
           sys.path.insert(0, os.path.abspath('client'))
           from PyQt6.QtWidgets import QApplication
           import gallery_app
+          from unittest.mock import patch
+          from PyQt6.QtCore import QTimer
           app=QApplication([])
-          assert gallery_app.MediaItem
-          print('Native Qt6 gallery imported successfully')
+          with patch.object(gallery_app,'make_gallery',return_value=([],{'configured':True,'local':{},'remote':{},'last_sync':{},'paths':{}})):
+              window=gallery_app.Gallery(fullscreen=False)
+              QTimer.singleShot(500,app.quit)
+              app.exec()
+              window.close()
+          print('Native Qt6 gallery launched headlessly')
           PY
