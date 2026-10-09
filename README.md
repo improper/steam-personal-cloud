@@ -28,7 +28,20 @@ docker compose logs -f personal-cloud
 
 Set `SPC_BIND_PORT` if port 8787 is unavailable; only the host port changes (container still listens on 8787). Keep `.env` **on the host**: never commit or publish it. If the folder is not writable by the container, adjust ownership of the storage folder to the container user. `SPC_TOKEN` in `.env` is the secret needed for each client to connect. Use a dedicated Immich API key for a dedicated account if desired.
 
-## Set up the Xubuntu gamecenter
+## Install the Ubuntu release package (recommended)
+
+Open [GitHub Releases](https://github.com/improper/steam-personal-cloud/releases), download the latest preview `steam-personal-cloud-client_*_all.deb`, and on Xubuntu run:
+
+```bash
+sudo apt install ./steam-personal-cloud-client_*_all.deb
+steam-personal-cloud-setup
+```
+
+The setup command prompts for server URL, a one-time Fast Connect code, Steam account, capture directories and bandwidth cap. It enables your user systemd timer. The package places the Python agent and timer system-wide; future package upgrades update the agent without pairing again. It does not configure the server or upload files until you run setup. To view the server dashboard from Steam, add the `Steam Personal Cloud` desktop launcher as a non-Steam game, or run `steam-personal-cloud-dashboard`.
+
+This is a **lightweight client and browser launcher**, not yet a native gamepad UI. Local recording reconstruction still occurs on the server.
+
+## Set up the Xubuntu gamecenter from source (alternative)
 
 From the same clone (or a downloaded source archive):
 

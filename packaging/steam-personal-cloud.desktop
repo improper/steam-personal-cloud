@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Steam Personal Cloud
+Comment=View Steam media backup and Immich sync status
+Exec=steam-personal-cloud-dashboard
+Icon=network-server
+Terminal=false
+Categories=Game;Utility;
+StartupNotify=true

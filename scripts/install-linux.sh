@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 SRC_DIR=$(cd "$(dirname "$0")/.." && pwd)
+if [[ "${SPC_PACKAGE_MODE:-0}" == 1 ]]; then
+  AGENT=/usr/lib/steam-personal-cloud/agent.py
+  [[ -f "$AGENT" ]] || { echo 'The system-installed agent is missing'; exit 1; }
+else
+  AGENT="$SRC_DIR/client/agent.py"
+fi
 mkdir -p "$HOME/.local/share/steam-personal-cloud" "$HOME/.config/steam-personal-cloud" "$HOME/.config/systemd/user"
 read -rp 'Server URL [http://192.168.1.27:8787]: ' server
 server=${server:-http://192.168.1.27:8787}
@@ -26,7 +32,7 @@ method=${method:-1}
 if [[ "$method" == 1 ]]; then
   printf '\nOn the Steam Personal Cloud server dashboard, click Pair Device to generate a short code.\n'
   read -rp 'Pairing code: ' pair_code
-  token=$(SPC_PAIR_CODE="$pair_code" python3 "$SRC_DIR/client/agent.py" --pair --server "$server" --client-id "$client_id" --steam-account "$account")
+  token=$(SPC_PAIR_CODE="$pair_code" python3 "$AGENT" --pair --server "$server" --client-id "$client_id" --steam-account "$account")
   unset pair_code
 elif [[ "$method" == 2 ]]; then
   read -rsp 'Existing client token (hidden): ' token; printf '\n'
@@ -52,9 +58,11 @@ p.write_text(json.dumps(config,indent=2)+'\n')
 p.chmod(0o600)
 PY
 unset SPC_SETUP_SERVER SPC_SETUP_TOKEN SPC_SETUP_CLIENT SPC_SETUP_ACCOUNT SPC_SETUP_SHOTS SPC_SETUP_RECORDINGS SPC_SETUP_BANDWIDTH token
-install -m 755 "$SRC_DIR/client/agent.py" "$HOME/.local/share/steam-personal-cloud/agent.py"
-install -m 644 "$SRC_DIR/client/steam-personal-cloud-sync.service" "$HOME/.config/systemd/user/"
-install -m 644 "$SRC_DIR/client/steam-personal-cloud-sync.timer" "$HOME/.config/systemd/user/"
+if [[ "${SPC_PACKAGE_MODE:-0}" != 1 ]]; then
+  install -m 755 "$AGENT" "$HOME/.local/share/steam-personal-cloud/agent.py"
+  install -m 644 "$SRC_DIR/client/steam-personal-cloud-sync.service" "$HOME/.config/systemd/user/"
+  install -m 644 "$SRC_DIR/client/steam-personal-cloud-sync.timer" "$HOME/.config/systemd/user/"
+fi
 systemctl --user daemon-reload
 systemctl --user enable --now steam-personal-cloud-sync.timer
 printf '\nSync enabled. Run once now: systemctl --user start steam-personal-cloud-sync.service\n'
