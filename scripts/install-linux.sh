@@ -4,8 +4,6 @@ SRC_DIR=$(cd "$(dirname "$0")/.." && pwd)
 mkdir -p "$HOME/.local/share/steam-personal-cloud" "$HOME/.config/steam-personal-cloud" "$HOME/.config/systemd/user"
 read -rp 'Server URL [http://192.168.1.27:8787]: ' server
 server=${server:-http://192.168.1.27:8787}
-read -rsp 'Personal Cloud client token (hidden): ' token; printf '\n'
-[[ -n "$token" ]] || { echo 'Missing token'; exit 1; }
 read -rp "Client name [$(hostname -s)]: " client_id
 client_id=${client_id:-$(hostname -s)}
 read -rp 'Steam userdata account ID [728364463]: ' account
@@ -23,6 +21,19 @@ if [[ -f "$HOME/.config/steam-personal-cloud/client.json" ]]; then
   echo 'Existing client config found. Refusing to overwrite.'
   exit 1
 fi
+read -rp 'Authentication [1=Fast Connect pairing code, 2=existing token] (default 1): ' method
+method=${method:-1}
+if [[ "$method" == 1 ]]; then
+  printf '\nOn the Steam Personal Cloud server dashboard, click Pair Device to generate a short code.\n'
+  read -rp 'Pairing code: ' pair_code
+  token=$(SPC_PAIR_CODE="$pair_code" python3 "$SRC_DIR/client/agent.py" --pair --server "$server" --client-id "$client_id" --steam-account "$account")
+  unset pair_code
+elif [[ "$method" == 2 ]]; then
+  read -rsp 'Existing client token (hidden): ' token; printf '\n'
+else
+  echo 'Invalid authentication method'; exit 1
+fi
+[[ -n "$token" ]] || { echo 'Authentication failed'; exit 1; }
 umask 077
 # Avoid passing secrets through command arguments or shell history.
 export SPC_SETUP_SERVER="$server" SPC_SETUP_TOKEN="$token" SPC_SETUP_CLIENT="$client_id" \
@@ -48,4 +59,4 @@ systemctl --user daemon-reload
 systemctl --user enable --now steam-personal-cloud-sync.timer
 printf '\nSync enabled. Run once now: systemctl --user start steam-personal-cloud-sync.service\n'
 printf 'Follow logs: journalctl --user -u steam-personal-cloud-sync.service -f\n'
-echo 'Dashboard: open http://192.168.1.27:8787 on the game center.'
+echo "Dashboard: open $server on the game center."

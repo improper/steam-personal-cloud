@@ -1,13 +1,14 @@
 """Steam Personal Cloud receiver, processing queue, and gamepad-friendly dashboard."""
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timezone
 import hashlib
 import hmac
 import os
 from pathlib import Path, PurePosixPath
 import re
+import secrets
 import shutil
 import sqlite3
 import subprocess
@@ -17,6 +18,7 @@ import time
 from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request
+from pydantic import BaseModel
 from fastapi.responses import FileResponse
 import requests
 
@@ -29,6 +31,8 @@ IDLE_SECONDS = int(os.environ.get('SPC_IDLE_SECONDS', '600'))
 WORKER_INTERVAL = int(os.environ.get('SPC_WORKER_INTERVAL', '30'))
 MAX_FILE_BYTES = int(os.environ.get('SPC_MAX_UPLOAD_MB', '128')) * 1024 * 1024
 ID_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$')
+PAIR_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+PAIR_TTL = min(900, max(60, int(os.environ.get('SPC_PAIR_TTL_SECONDS', '300'))))
 EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.mpd', '.m4s', '.pb', '.mp4'}
 MEDIA_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp'}
 shutdown_event = threading.Event()
@@ -44,6 +48,11 @@ def db_open():
         path TEXT PRIMARY KEY, client TEXT NOT NULL, account TEXT NOT NULL,
         sha TEXT NOT NULL, size INTEGER NOT NULL, original_mtime REAL NOT NULL,
         received_at REAL NOT NULL)''')
+    db.execute('''CREATE TABLE IF NOT EXISTS devices (
+        token_hash TEXT PRIMARY KEY, client TEXT NOT NULL, account TEXT NOT NULL,
+        created_at REAL NOT NULL, last_seen REAL NOT NULL, revoked_at REAL)''')
+    db.execute('''CREATE TABLE IF NOT EXISTS pairings (
+        code_hash TEXT PRIMARY KEY, expires_at REAL NOT NULL)''')
     db.execute('''CREATE TABLE IF NOT EXISTS media (
         key TEXT PRIMARY KEY, client TEXT NOT NULL, account TEXT NOT NULL,
         source TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL,
@@ -54,9 +63,40 @@ def db_open():
     return db
 
 
-def authorize(token: Optional[str]):
-    if not TOKEN or not token or not hmac.compare_digest(TOKEN, token):
-        raise HTTPException(401, 'Invalid personal cloud token')
+@contextmanager
+def database():
+    """Commit or roll back SQLite work, and always close the connection."""
+    db = db_open()
+    try:
+        with db:
+            yield db
+    finally:
+        db.close()
+
+
+def authorize(token: Optional[str], client: str = None, account: str = None, admin_only: bool = False):
+    """Master token is admin; enrolled tokens are scoped to one client/account pair."""
+    if not token:
+        raise HTTPException(401, 'Authorization required')
+    if TOKEN and hmac.compare_digest(TOKEN, token):
+        return True
+    if admin_only:
+        raise HTTPException(403, 'Administrator authorization required')
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    with database() as db:
+        device = db.execute('SELECT client,account FROM devices WHERE token_hash=? AND revoked_at IS NULL',
+                            (token_hash,)).fetchone()
+        if device and (client is None or (client == device['client'] and account == device['account'])):
+            db.execute('UPDATE devices SET last_seen=? WHERE token_hash=?', (time.time(), token_hash))
+            db.commit()
+            return False
+    raise HTTPException(401, 'Invalid token or device access denied')
+
+
+class PairRedemption(BaseModel):
+    code: str
+    client_id: str
+    steam_account: str
 
 
 def valid_path(client: str, account: str, rel: str):
@@ -294,7 +334,7 @@ async def receive(client: str, account: str, rel: str, request: Request,
                   x_spc_token: Optional[str] = Header(default=None),
                   x_spc_sha256: Optional[str] = Header(default=None),
                   x_spc_modified: Optional[str] = Header(default=None)):
-    authorize(x_spc_token)
+    authorize(x_spc_token, client, account)
     identifier = valid_path(client, account, rel)
     if not x_spc_sha256 or not re.fullmatch('[0-9a-f]{64}', x_spc_sha256):
         raise HTTPException(400, 'SHA256 required')
@@ -328,7 +368,7 @@ async def receive(client: str, account: str, rel: str, request: Request,
         if size != length or checksum.hexdigest() != x_spc_sha256:
             raise HTTPException(422, 'Length/checksum mismatch')
         now = time.time()
-        with db_open() as db:
+        with database() as db:
             old = db.execute('SELECT sha FROM files WHERE path=?', (identifier,)).fetchone()
             if old is None or old['sha'] != x_spc_sha256 or not destination.exists():
                 os.replace(staging, destination)
@@ -342,16 +382,68 @@ async def receive(client: str, account: str, rel: str, request: Request,
 
 @app.get('/api/status')
 def status(x_spc_token: Optional[str] = Header(default=None)):
-    authorize(x_spc_token)
-    with db_open() as db:
+    is_admin = authorize(x_spc_token)
+    with database() as db:
         rows = db.execute('SELECT client,account,kind,source,status,immich_id,error,updated_at FROM media '
                           'ORDER BY updated_at DESC LIMIT 150').fetchall()
         total_bytes = db.execute('SELECT COALESCE(SUM(size),0) FROM files').fetchone()[0]
         sources = db.execute('SELECT COUNT(*) FROM files').fetchone()[0]
+        if not is_admin:
+            device = db.execute('SELECT client,account FROM devices WHERE token_hash=?',
+                                (hashlib.sha256(x_spc_token.encode()).hexdigest(),)).fetchone()
+            rows = [row for row in rows if row['client'] == device['client'] and row['account'] == device['account']]
+            total_bytes = db.execute('SELECT COALESCE(SUM(size),0) FROM files WHERE client=? AND account=?',
+                                     (device['client'], device['account'])).fetchone()[0]
+            sources = db.execute('SELECT COUNT(*) FROM files WHERE client=? AND account=?',
+                                 (device['client'], device['account'])).fetchone()[0]
     result = [dict(row) for row in rows]
     return {'items': result, 'files_backed_up': sources, 'bytes_backed_up': total_bytes,
             'counts': {s: sum(row['status'] == s for row in result) for s in
                        ('queued','processing','uploading','complete','error')}}
+
+
+@app.post('/api/pair/codes')
+def issue_pairing_code(x_spc_token: Optional[str] = Header(default=None)):
+    authorize(x_spc_token, admin_only=True)
+    code = ''.join(secrets.choice(PAIR_CHARS) for _ in range(10))
+    expires = time.time() + PAIR_TTL
+    with database() as db:
+        db.execute('DELETE FROM pairings WHERE expires_at<=?', (time.time(),))
+        db.execute('INSERT INTO pairings(code_hash,expires_at) VALUES (?,?)',
+                   (hashlib.sha256(code.encode()).hexdigest(), expires))
+        db.commit()
+    return {'code': code[:5] + '-' + code[5:], 'expires_in': PAIR_TTL}
+
+
+@app.post('/api/pair/redeem')
+def redeem_pairing_code(request: PairRedemption):
+    code = request.code.upper().replace('-', '').replace(' ', '')
+    if (len(code) != 10 or any(c not in PAIR_CHARS for c in code)
+            or not ID_RE.fullmatch(request.client_id)
+            or not ID_RE.fullmatch(request.steam_account)):
+        raise HTTPException(400, 'Invalid pairing code or client identity')
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    with database() as db:
+        db.execute('BEGIN IMMEDIATE')
+        valid = db.execute('SELECT 1 FROM pairings WHERE code_hash=? AND expires_at>?',
+                           (hashlib.sha256(code.encode()).hexdigest(), time.time())).fetchone()
+        if not valid:
+            raise HTTPException(401, 'Code expired, invalid or already used')
+        db.execute('DELETE FROM pairings WHERE code_hash=?', (hashlib.sha256(code.encode()).hexdigest(),))
+        db.execute('INSERT INTO devices(token_hash,client,account,created_at,last_seen) VALUES (?,?,?,?,?)',
+                   (token_hash, request.client_id, request.steam_account, time.time(), time.time()))
+        db.commit()
+    return {'token': token, 'client_id': request.client_id, 'steam_account': request.steam_account}
+
+
+@app.get('/api/pair/devices')
+def list_paired_devices(x_spc_token: Optional[str] = Header(default=None)):
+    authorize(x_spc_token, admin_only=True)
+    with database() as db:
+        rows = db.execute('SELECT client,account,created_at,last_seen FROM devices WHERE revoked_at IS NULL '
+                          'ORDER BY created_at DESC LIMIT 100').fetchall()
+    return {'devices': [dict(row) for row in rows]}
 
 
 @app.get('/')

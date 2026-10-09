@@ -67,6 +67,6 @@ Unlike `Auto Update` and `Poll for Updates`, the Git webhook responds to **sourc
 - Before trusting background recording archiving, test a screenshot and one complete Steam `.m4s`/`session.mpd` recording end-to-end. The prototype's fragment reconstruction is **not yet validated** with actual Steam recordings.
 - Monitor storage growth: all background sessions can consume substantial disk space; the server intentionally retains original fragments.
 - Keep the Immich API key only on the server and the Steam client token on clients.
-- There is no need to install Node.js or FFmpeg on the Steam clients.
+- There is no need to install Node.js or FFmpeg on the Steam clients. For Fast Connect, sign into the Steam Personal Cloud dashboard as administrator, click Pair device and enter the five-minute code in the Linux client installer. Each device receives its own scoped credential.
 
 References: https://komo.do/docs/deploy/compose , https://komo.do/docs/automate/webhooks , https://komo.do/docs/configuration/providers , https://komo.do/docs/configuration/variables

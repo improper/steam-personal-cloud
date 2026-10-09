@@ -12,6 +12,7 @@ services:
       IMMICH_ALBUM: ${IMMICH_ALBUM:-Game Center}
       SPC_IDLE_SECONDS: ${SPC_IDLE_SECONDS:-600}
       SPC_WORKER_INTERVAL: 30
+      SPC_PAIR_TTL_SECONDS: ${SPC_PAIR_TTL_SECONDS:-300}
       SPC_MAX_UPLOAD_MB: 128
     volumes:
       - ${SPC_HOST_STORAGE:-./storage}:/data

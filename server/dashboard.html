@@ -22,7 +22,8 @@ button{background:#334f70;color:#fff;border:1px solid #57779d;padding:.65rem .95
 button:focus-visible,input:focus-visible{outline:4px solid #79bcff;outline-offset:3px}
 button:hover{background:#426a94}input{padding:.75rem;width:min(100%,30rem);background:#101b2c;color:#fff;border:1px solid #6d83a0}
 #login{background:#1b2b40;border:1px solid #3e5875;padding:1.5rem;border-radius:1rem;display:grid;gap:.7rem}
-#login[hidden],#content[hidden]{display:none}footer{margin-top:1.4rem;color:#849ab4;font-size:.76rem}
+#login[hidden],#content[hidden],#pair-code[hidden]{display:none}
+.code-box{margin-top:1rem;border:1px solid #79bcff;background:#101b2c;padding:1rem;border-radius:.7rem;font-size:1.75rem;font-weight:750;letter-spacing:.12em;text-align:center;font-variant-numeric:tabular-nums}footer{margin-top:1.4rem;color:#849ab4;font-size:.76rem}
 @media(max-width:680px){body{padding:1rem}.stats{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}h1{font-size:1.5rem}.asset{flex-wrap:wrap}.state{margin-left:4.4rem}}
 </style></head><body>
 <header><div class="brand"><span class="cloud">☁</span><div><h1>Steam Personal Cloud</h1><div class="muted">Media syncing without gameplay interruptions</div></div></div><span id="connection" class="pill">Connect to server</span></header>
@@ -34,6 +35,7 @@ button:hover{background:#426a94}input{padding:.75rem;width:min(100%,30rem);backg
 <div class="card"><div class="smalllabel">Processing / uploading</div><div id="working" class="count">0</div></div>
 <div class="card"><div class="smalllabel">Available in Immich</div><div id="complete" class="count">0</div></div></div>
 <section class="card"><div class="controls" style="justify-content:space-between;align-items:center"><strong>Recent captures</strong><div class="controls"><button id="refresh">Refresh</button><button id="disconnect">Disconnect</button></div></div><div class="rows" id="items"></div></section>
+<section class="card"><div class="controls" style="justify-content:space-between;align-items:center"><div><strong>Connect a Steam client</strong><div class="muted">Generate a one-time code and enter it into the Linux client installer.</div></div><button id="pair" type="button">Pair device</button></div><div id="pair-code" role="status" aria-live="polite" class="code-box" hidden></div></section>
 <section class="card"><div class="smalllabel" id="storage">Loading backup totals...</div></section>
 </main><footer>Directional pad / arrow keys: navigate &nbsp; · &nbsp; A / Enter: select &nbsp; · &nbsp; Status refreshes automatically</footer>
 <script>
@@ -54,7 +56,8 @@ if(!data.items.length)$('items').appendChild(text('p','muted','Nothing received 
 }catch(error){$('connection').textContent='Server unavailable';$('error').textContent=String(error)}}
 $('connect').onclick=()=>{key=$('token').value.trim();if(!key)return;$('token').value='';sessionStorage.setItem('spc_token',key);refresh()};
 $('token').onkeydown=e=>{if(e.key==='Enter')$('connect').click()};
-$('disconnect').onclick=()=>{key='';sessionStorage.removeItem('spc_token');showLogin()};$('refresh').onclick=refresh;
+$('pair').onclick=async()=>{if(!key)return;const el=$('pair-code');el.hidden=false;el.textContent='Generating pairing code...';try{const resp=await fetch('/api/pair/codes',{method:'POST',headers:{'X-SPC-Token':key}});const data=await resp.json();if(!resp.ok)throw Error(data.detail||'HTTP '+resp.status);el.textContent=data.code+' · valid '+Math.round(data.expires_in/60)+' minutes · one-time use';}catch(err){el.textContent='Cannot generate pairing code: '+String(err.message||err)}};
+$('disconnect').onclick=()=>{key='';sessionStorage.removeItem('spc_token');$('pair-code').hidden=true;showLogin()};$('refresh').onclick=refresh;
 // Steam Input keyboard mappings work in any browser. Native gamepad polling is optional.
 let lastButtons=[];const controls=()=>[...document.querySelectorAll('button:not([disabled]),input')].filter(e=>e.offsetParent!==null);
 function shift(delta){const list=controls();if(!list.length)return;const i=list.indexOf(document.activeElement);list[(i+delta+list.length)%list.length].focus()}

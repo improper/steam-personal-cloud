@@ -95,6 +95,29 @@ def send_file(base_url: str, token: str, client: str, account: str,
         conn.close()
 
 
+def pair_device(base_url: str, code: str, client_id: str, account: str):
+    """One-time device enrollment; never put the master server token on a Steam client."""
+    url = urlsplit(base_url)
+    if url.scheme not in ('http', 'https') or not url.hostname or url.query or url.fragment or url.username or url.password:
+        raise ValueError('Server must be a valid HTTP(S) origin')
+    conn_type = http.client.HTTPSConnection if url.scheme == 'https' else http.client.HTTPConnection
+    conn = conn_type(url.hostname, url.port, timeout=20)
+    try:
+        payload = json.dumps({'code': code, 'client_id': client_id, 'steam_account': account}).encode()
+        conn.request('POST', url.path.rstrip('/') + '/api/pair/redeem', payload,
+                     {'Content-Type': 'application/json'})
+        response = conn.getresponse()
+        body = response.read(4096).decode(errors='replace')
+        if response.status != 200:
+            raise RuntimeError('Enrollment failed (HTTP ' + str(response.status) + '): ' + body[:250])
+        data = json.loads(body)
+        if not data.get('token'):
+            raise RuntimeError('Server did not provide a client token')
+        return data['token']
+    finally:
+        conn.close()
+
+
 def sync(config: dict):
     state = Path(config.get('state_dir', '~/.local/state/steam-personal-cloud')).expanduser()
     state.mkdir(parents=True, exist_ok=True)
@@ -136,7 +159,17 @@ def sync(config: dict):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', default='~/.config/steam-personal-cloud/client.json')
+    parser.add_argument('--pair', action='store_true', help='Redeem SPC_PAIR_CODE for a device token')
+    parser.add_argument('--server', help='Server URL for pairing')
+    parser.add_argument('--client-id', help='Device name for pairing')
+    parser.add_argument('--steam-account', help='Steam account for pairing')
     args = parser.parse_args()
+    if args.pair:
+        code = os.environ.get('SPC_PAIR_CODE', '')
+        if not code or not args.server or not args.client_id or not args.steam_account:
+            parser.error('Pairing requires SPC_PAIR_CODE, --server, --client-id and --steam-account')
+        print(pair_device(args.server, code, args.client_id, args.steam_account))
+        return
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
     config_file = Path(args.config).expanduser()
     config = json.loads(config_file.read_text())
