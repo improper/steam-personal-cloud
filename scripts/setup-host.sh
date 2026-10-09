@@ -8,6 +8,8 @@ if [[ -f .env ]]; then
 fi
 read -rp 'Bind IP on this server [192.168.1.27]: ' bind
 bind=${bind:-192.168.1.27}
+read -rp 'Host bind port [8787]: ' bind_port
+bind_port=${bind_port:-8787}
 read -rp 'Immich server URL [http://192.168.1.27:2283]: ' immich
 immich=${immich:-http://192.168.1.27:2283}
 read -rsp 'Immich API key (hidden): ' immich_key; printf '\n'
@@ -17,6 +19,7 @@ album=${album:-Game Center}
 read -rp 'Host storage path [./storage]: ' storage
 storage=${storage:-./storage}
 [[ "$bind" =~ ^[0-9.]+$ ]] || { echo 'Bind must be an IPv4 address'; exit 1; }
+[[ "$bind_port" =~ ^[0-9]+$ ]] && (( 10#$bind_port >= 1 && 10#$bind_port <= 65535 )) || { echo 'Port must be between 1 and 65535'; exit 1; }
 [[ "$immich" =~ ^https?://[^[:space:]]+$ ]] || { echo 'Immich URL must start with http(s)'; exit 1; }
 [[ "$album" != *$'\n'* && "$album" != *'"'* && "$album" != *'$'* ]] || { echo 'Unsupported album characters'; exit 1; }
 [[ "$storage" != *$'\n'* && "$storage" != *'"'* && "$storage" != *'$'* ]] || { echo 'Unsupported storage path characters'; exit 1; }
@@ -24,6 +27,7 @@ storage=${storage:-./storage}
 secret=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
 cat > .env <<EOF
 SPC_BIND="$bind"
+SPC_BIND_PORT="$bind_port"
 SPC_TOKEN="$secret"
 IMMICH_URL="$immich"
 IMMICH_API_KEY="$immich_key"
