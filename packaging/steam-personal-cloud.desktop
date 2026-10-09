@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Steam Personal Cloud
-Comment=View Steam media backup and Immich sync status
+Comment=View local Steam captures, upload progress, and Immich status
 Exec=steam-personal-cloud-dashboard
 Icon=network-server
 Terminal=false

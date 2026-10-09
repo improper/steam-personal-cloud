@@ -11,12 +11,28 @@ import os
 from pathlib import Path
 import sqlite3
 import ssl
+import tempfile
 import time
 from urllib.parse import quote, urlsplit
 
 LOG = logging.getLogger('spc-agent')
 EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.m4s', '.mpd', '.pb', '.mp4'}
 CHUNK = 256 * 1024
+
+
+def record_scan_status(directory, payload):
+    """Persist progress for local dashboard; no credentials are recorded."""
+    temp_name = None
+    try:
+        with tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=directory, prefix='.last_sync-', delete=False) as stream:
+            temp_name = stream.name
+            json.dump(payload, stream)
+        os.replace(temp_name, directory / 'last_sync.json')
+    except OSError as exc:
+        LOG.warning('Cannot write local sync status: %s', exc)
+    finally:
+        if temp_name:
+            Path(temp_name).unlink(missing_ok=True)
 
 
 def discover(screenshot_root: Path, recording_root: Path, settle_seconds: int):
@@ -121,9 +137,12 @@ def pair_device(base_url: str, code: str, client_id: str, account: str):
 def sync(config: dict):
     state = Path(config.get('state_dir', '~/.local/state/steam-personal-cloud')).expanduser()
     state.mkdir(parents=True, exist_ok=True)
+    started = time.time()
+    record_scan_status(state, {'started_at': started, 'running': True})
     with sqlite3.connect(state / 'agent.sqlite3') as db:
         db.execute('CREATE TABLE IF NOT EXISTS sent (remote TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, sha TEXT NOT NULL)')
         ok, skipped, failed = 0, 0, 0
+        last_error = ''
         for path, remote, stat in discover(Path(config['screenshots']).expanduser(),
                                            Path(config['recordings']).expanduser(),
                                            int(config.get('settle_seconds', 45))):
@@ -151,8 +170,11 @@ def sync(config: dict):
                 LOG.info('Sent %s (%s bytes)', remote, stat.st_size)
             except (OSError, ValueError, RuntimeError, TimeoutError, ssl.SSLError) as exc:
                 LOG.warning('Could not sync %s: %s', remote, exc)
+                last_error = f'{remote}: {exc}'[:300]
                 failed += 1
         LOG.info('Sync finished: %d sent, %d unchanged, %d failed', ok, skipped, failed)
+        record_scan_status(state, {'started_at': started, 'finished_at': time.time(), 'running': False,
+                                   'uploaded': ok, 'skipped': skipped, 'failed': failed, 'last_error': last_error})
         return failed == 0
 
 

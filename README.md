@@ -37,9 +37,18 @@ sudo apt install ./steam-personal-cloud-client_*_all.deb
 steam-personal-cloud-setup
 ```
 
-The setup command prompts for server URL, a one-time Fast Connect code, Steam account, capture directories and bandwidth setting (enter `0` for unlimited; this is the default). It enables your user systemd timer. The package places the Python agent and timer system-wide; future package upgrades update the agent without pairing again. It does not configure the server or upload files until you run setup. To view the server dashboard from Steam, add the `Steam Personal Cloud` desktop launcher as a non-Steam game, or run `steam-personal-cloud-dashboard`.
+The setup command prompts for server URL, a one-time Fast Connect code, Steam account, capture directories and bandwidth setting (enter `0` for unlimited; this is the default). It enables your user systemd timer. The package places the Python agent and timer system-wide; future package upgrades update the agent without pairing again. It does not configure the server or upload files until you run setup. To view **local files, upload history and Immich processing**, add `Steam Personal Cloud` as a non-Steam game, or run `steam-personal-cloud-dashboard`.
 
-This is a **lightweight client and browser launcher**, not yet a native gamepad UI. Local recording reconstruction still occurs on the server.
+This is a **lightweight client with a browser-backed local dashboard**, not yet a native gamepad executable. Local recording reconstruction still occurs on the server.
+
+
+## Local library dashboard and setup repair (Ubuntu client)
+
+From the Xubuntu applications menu (or as a non-Steam game), open **Steam Personal Cloud**. It now starts a loopback-only dashboard at `http://127.0.0.1:18787/`, independently of the family server's UI. It shows eligible local files awaiting backup, files acknowledged by the server, grouped recording fragments, the last sync attempt and failures, plus the server's processing and Immich totals. The client token is used by the local Python process and **never passed to the browser**. The view uses a Chromium app window when available, otherwise the default browser. Local status does not yet offer byte-level real-time transfer progress, and fragment counts should not be confused with complete recordings.
+
+Run `steam-personal-cloud-setup` again to **check or repair an existing installation, change source folders/bandwidth, or re-pair**. Existing pairing and local sync history are preserved unless you explicitly re-pair; changes are backed up and saved only after confirmation. Expired codes and offline-server errors can be retried without restarting the entire wizard. The wizard checks server health before enrollment. To trigger a manual sync use `systemctl --user start steam-personal-cloud-sync.service`.
+
+The local dashboard is read-only and listens only on `127.0.0.1:18787`; it does not open a new inbound service to the LAN.
 
 ## Set up the Xubuntu gamecenter from source (alternative)
 

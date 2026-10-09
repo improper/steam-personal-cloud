@@ -1,16 +1,34 @@
 #!/usr/bin/env python3
-"""Open the configured Steam Personal Cloud dashboard in the desktop browser."""
-import json
+"""Open the local library and sync dashboard in a dedicated window where possible."""
 from pathlib import Path
+import shutil
 import subprocess
 import sys
+import time
+import urllib.error
+import urllib.request
 
-CONFIG = Path.home() / '.config/steam-personal-cloud/client.json'
+URL = 'http://127.0.0.1:18787/'
 try:
-    url = json.loads(CONFIG.read_text())['server']
-    if not (url.startswith('http://') or url.startswith('https://')):
-        raise ValueError('Invalid server URL')
-except (OSError, KeyError, ValueError, json.JSONDecodeError):
-    print('Configure Steam Personal Cloud first: steam-personal-cloud-setup', file=sys.stderr)
+    subprocess.run(['systemctl', '--user', 'start', 'steam-personal-cloud-ui.service'], check=True, timeout=10)
+except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+    print('Could not start the local status dashboard:', exc, file=sys.stderr)
+    print('Check: journalctl --user -u steam-personal-cloud-ui.service -n 30', file=sys.stderr)
     sys.exit(1)
-subprocess.Popen(['xdg-open', url], start_new_session=True)
+for i in range(25):
+    try:
+        with urllib.request.urlopen(URL, timeout=1) as response:
+            if response.status == 200:
+                break
+    except (OSError, urllib.error.URLError):
+        time.sleep(.2)
+else:
+    print('Local dashboard did not respond at ' + URL, file=sys.stderr)
+    sys.exit(1)
+for binary in ('chromium', 'chromium-browser', 'google-chrome', 'brave-browser', 'microsoft-edge'):
+    if shutil.which(binary):
+        # App window rather than a browser tab. Keep Steam's fullscreen/window manager settings unchanged.
+        subprocess.Popen([binary, '--app=' + URL], start_new_session=True)
+        break
+else:
+    subprocess.Popen(['xdg-open', URL], start_new_session=True)

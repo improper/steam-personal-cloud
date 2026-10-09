@@ -1,0 +1,12 @@
+[Unit]
+Description=Steam Personal Cloud local status dashboard
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/lib/steam-personal-cloud/local_dashboard.py
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
