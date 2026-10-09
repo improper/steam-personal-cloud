@@ -10,11 +10,17 @@ import urllib.request
 
 URL = 'http://127.0.0.1:18787/'
 try:
-    subprocess.run(['systemctl', '--user', 'start', 'steam-personal-cloud-ui.service'], check=True, timeout=10)
-except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-    print('Could not start the local status dashboard:', exc, file=sys.stderr)
-    print('Check: journalctl --user -u steam-personal-cloud-ui.service -n 30', file=sys.stderr)
-    sys.exit(1)
+    subprocess.run(['systemctl', '--user', 'start', 'steam-personal-cloud-ui.service'], check=True, timeout=10, capture_output=True)
+except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+    # A running user manager may not notice a newly installed package unit until reload.
+    try:
+        subprocess.run(['systemctl', '--user', 'daemon-reload'], check=True, timeout=10, capture_output=True)
+        subprocess.run(['systemctl', '--user', 'start', 'steam-personal-cloud-ui.service'], check=True, timeout=10, capture_output=True)
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        print('Could not start the local status dashboard:', exc, file=sys.stderr)
+        print('Run steam-personal-cloud-setup to repair the installation.', file=sys.stderr)
+        print('Check: journalctl --user -u steam-personal-cloud-ui.service -n 30', file=sys.stderr)
+        sys.exit(1)
 for i in range(25):
     try:
         with urllib.request.urlopen(URL, timeout=1) as response:
