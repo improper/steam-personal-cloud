@@ -1,0 +1,44 @@
+name: Prototype checks
+on:
+  push:
+    branches: ['feature/initial-prototype', main]
+  pull_request:
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r server/requirements.txt httpx
+      - run: python -m unittest discover -s tests -v
+      - run: bash -n scripts/install-linux.sh scripts/setup-host.sh
+      - run: python -m compileall -q client server
+      - run: bash -n scripts/build-client-deb.sh && bash scripts/build-client-deb.sh 0.2.0~preview.999
+
+  qt-native-smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt runtime
+        run: sudo apt-get update -qq && sudo apt-get install -y python3-pyqt6 python3-pyqt6.qtmultimedia
+      - name: Import the native Qt gallery (system Python)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          /usr/bin/python3 - <<'PY'
+          import os,sys
+          sys.path.insert(0, os.path.abspath('client'))
+          from PyQt6.QtWidgets import QApplication
+          import gallery_app
+          from unittest.mock import patch
+          from PyQt6.QtCore import QTimer
+          app=QApplication([])
+          with patch.object(gallery_app,'make_gallery',return_value=([],{'configured':True,'local':{},'remote':{},'last_sync':{},'paths':{}})):
+              window=gallery_app.Gallery(fullscreen=False)
+              QTimer.singleShot(500,app.quit)
+              app.exec()
+              window.close()
+          print('Native Qt6 gallery launched headlessly')
+          PY

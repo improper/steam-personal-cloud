@@ -1,0 +1,72 @@
+name: Ubuntu client package and preview release
+on:
+  push:
+    branches: [feature/initial-prototype]
+    tags: ['v[0-9]*']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Choose package version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            DEB_VERSION="${GITHUB_REF_NAME#v}"
+            TAG="$GITHUB_REF_NAME"
+            PRERELEASE=false
+          else
+            DEB_VERSION="0.3.0~preview.${GITHUB_RUN_NUMBER}"
+            TAG="v0.3.0-preview.${GITHUB_RUN_NUMBER}"
+            PRERELEASE=true
+          fi
+          echo "deb_version=$DEB_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+      - name: Build Debian package
+        run: bash scripts/build-client-deb.sh '${{ steps.version.outputs.deb_version }}'
+      - name: Inspect package
+        run: |
+          dpkg-deb --info dist/*.deb
+          dpkg-deb --contents dist/*.deb
+          mkdir extracted
+          dpkg-deb -x dist/*.deb extracted
+          test -f extracted/usr/lib/steam-personal-cloud/agent.py
+          test -f extracted/usr/lib/systemd/user/steam-personal-cloud-sync.timer
+          test -f extracted/usr/lib/systemd/user/steam-personal-cloud-ui.service
+          test -f extracted/usr/lib/steam-personal-cloud/local_status.py
+          test -f extracted/usr/lib/steam-personal-cloud/local_dashboard.py
+          test -f extracted/usr/lib/steam-personal-cloud/local_dashboard.html
+          test -f extracted/usr/lib/steam-personal-cloud/gallery_app.py
+          test -f extracted/usr/lib/steam-personal-cloud/gamepad_linux.py
+          test -f extracted/usr/lib/steam-personal-cloud/gallery_model.py
+          test -f extracted/usr/bin/steam-personal-cloud-gallery
+          test -f extracted/usr/share/applications/steam-personal-cloud-gallery.desktop
+          grep -F 'python3-pyqt6.qtmultimedia' <(dpkg-deb --field dist/*.deb Depends)
+          test -f extracted/usr/share/steam-personal-cloud/scripts/setup.py
+          grep -F '/usr/lib/steam-personal-cloud/agent.py' extracted/usr/lib/systemd/user/steam-personal-cloud-sync.service
+          python3 -m py_compile extracted/usr/lib/steam-personal-cloud/*.py extracted/usr/share/steam-personal-cloud/scripts/setup.py
+          bash -n extracted/usr/share/steam-personal-cloud/scripts/install-linux.sh
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: steam-personal-cloud-ubuntu-client
+          path: |
+            dist/*.deb
+            dist/*.sha256
+          if-no-files-found: error
+      - name: Publish GitHub prerelease / release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        shell: bash
+        run: |
+          args=(--target "$GITHUB_SHA" --title "Steam Personal Cloud Client $RELEASE_TAG" --notes "Ubuntu/Debian native Qt6 gallery preview. Add Steam Personal Cloud Gallery as a non-Steam game, pair via steam-personal-cloud-setup. Features large-screen gallery, Immich video streaming, safe Trash actions, live status. Deploy matching server branch for streaming and deletion.")
+          if [[ "$PRERELEASE" == true ]]; then args+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" dist/*.deb dist/*.sha256 "${args[@]}"

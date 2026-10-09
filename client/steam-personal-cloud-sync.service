@@ -1,0 +1,13 @@
+[Unit]
+Description=Steam Personal Cloud - lightweight capture upload
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 %h/.local/share/steam-personal-cloud/agent.py
+Nice=15
+IOSchedulingClass=idle
+CPUWeight=10
+IOWeight=10
+TimeoutStartSec=30min

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Steam Personal Cloud Diagnostics
+Comment=Technical client health and sync log dashboard
+Exec=steam-personal-cloud-dashboard
+Icon=steam-personal-cloud
+Terminal=false
+Categories=Utility;
+StartupNotify=true
