@@ -34,6 +34,7 @@ Paste the following into the Stack **Environment** editor:
 
 ```dotenv
 SPC_BIND=192.168.1.27
+SPC_BIND_PORT=8787
 SPC_HOST_STORAGE=/srv/steam-personal-cloud/storage
 SPC_TOKEN=[[SPC_TRANSFER_TOKEN]]
 IMMICH_URL=http://192.168.1.27:2283
@@ -46,7 +47,7 @@ Before deployment, create the storage directory on the host and verify that Dock
 
 Komodo generates the Compose environment file; **do not run `scripts/setup-host.sh` for this deployment**, since that creates a separate `.env` and is intended for a manual Compose install.
 
-Deploy once manually, then test `http://192.168.1.27:8787/health` from the LAN. Keep this port internal; v0.1 uses a shared-token HTTP protocol. No Steam client's original recordings are removed.
+Deploy once manually, then test `http://192.168.1.27:<SPC_BIND_PORT>/health` from the LAN (default `8787`). `SPC_BIND_PORT` sets only the Docker host port; the container still listens internally on `8787`. Keep this port internal; v0.1 uses a shared-token HTTP protocol. No Steam client's original recordings are removed.
 
 ## 4. Automatic updates
 
