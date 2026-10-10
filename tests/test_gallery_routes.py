@@ -61,6 +61,45 @@ class GalleryRouteTests(unittest.TestCase):
         result=self.client.get('/api/media/'+ID+'/thumb',headers={'X-SPC-Token':'other-device'})
         self.assertEqual(result.status_code,401)
 
+    def test_immich_thumbnail_same_origin_redirect(self):
+        class Redirect:
+            status_code = 302
+            headers = {'Location': '/api/assets/' + ID + '/thumbnail?size=preview'}
+            url = 'http://immich.test:2283/api/assets/' + ID + '/thumbnail?size=thumbnail'
+            def close(self): pass
+        with patch('gallery_routes.requests.get', side_effect=[Redirect(), FakeStream()]) as get:
+            response = self.client.get('/api/media/' + ID + '/thumb',
+                                       headers={'X-SPC-Token':'device'})
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(get.call_count, 2)
+        self.assertIn('/thumbnail?size=preview', get.call_args.args[0])
+        self.assertEqual(get.call_args.kwargs['headers']['x-api-key'], 'SECRET')
+
+    def test_immich_thumbnail_external_redirect_is_rejected(self):
+        class Redirect:
+            status_code = 302
+            headers = {'Location': 'https://attacker.example/collect'}
+            url = 'http://immich.test:2283/api/assets/' + ID + '/thumbnail'
+            def close(self): pass
+        with patch('gallery_routes.requests.get', return_value=Redirect()) as get:
+            response = self.client.get('/api/media/' + ID + '/thumb',
+                                       headers={'X-SPC-Token':'device'})
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(get.call_count, 1)
+
+    def test_video_falls_back_to_original_if_transcode_pending(self):
+        class Pending:
+            status_code = 404
+            headers = {}
+            url = 'http://immich.test:2283/api/assets/' + ID + '/video/playback'
+            def close(self): pass
+        with patch('gallery_routes.requests.get', side_effect=[Pending(), FakeStream()]) as get:
+            response = self.client.get('/api/media/' + ID + '/video',
+                headers={'X-SPC-Token':'device','Range':'bytes=0-3'})
+        self.assertEqual(response.status_code, 206)
+        self.assertIn('/original', get.call_args.args[0])
+        self.assertEqual(response.content, b'abcd')
+
     def test_deletion_trashes_not_permanently_erases(self):
         response=self.client.delete('/api/media/'+ID+'/immich',headers={'X-SPC-Token':'device'})
         self.assertEqual(response.status_code,200)
