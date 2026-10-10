@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from urllib.parse import urljoin, urlsplit
 from typing import Optional
 
 from fastapi import Header, HTTPException, Request
@@ -50,8 +51,26 @@ def register_gallery_routes(app, authorize, database, immich_url, immich_key, im
                 raise HTTPException(416, 'Unsupported range')
             headers['Range'] = requested_range
         try:
-            upstream = requests.get(immich_url + endpoint, params=params, headers=headers,
-                                    stream=True, timeout=(5, 40), allow_redirects=False)
+            url = immich_url + endpoint
+            upstream = None
+            # Immich may redirect its thumbnail endpoint to another size/original.
+            # Follow ONLY redirects inside the configured Immich origin to avoid
+            # forwarding the privileged Immich API key to another host.
+            for _ in range(4):
+                upstream = requests.get(url, params=params, headers=headers,
+                                        stream=True, timeout=(5, 40), allow_redirects=False)
+                if upstream.status_code not in (301, 302, 303, 307, 308):
+                    break
+                location = upstream.headers.get('Location', '')
+                upstream.close()
+                target = urljoin(upstream.url, location)
+                if (not location or
+                    (urlsplit(target).scheme, urlsplit(target).netloc) !=
+                    (urlsplit(immich_url).scheme, urlsplit(immich_url).netloc)):
+                    raise HTTPException(502, 'Invalid Immich media redirect')
+                url, params = target, None
+            else:
+                raise HTTPException(502, 'Too many Immich media redirects')
         except requests.RequestException as exc:
             raise HTTPException(502, 'Immich media temporarily unavailable') from exc
         if upstream.status_code not in (200, 206):
