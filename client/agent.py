@@ -8,6 +8,8 @@ import http.client
 import json
 import logging
 import os
+import re
+from functools import lru_cache
 from pathlib import Path
 import sqlite3
 import ssl
@@ -18,6 +20,43 @@ from urllib.parse import quote, urlsplit
 LOG = logging.getLogger('spc-agent')
 EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.m4s', '.mpd', '.pb', '.mp4'}
 CHUNK = 256 * 1024
+
+
+@lru_cache(maxsize=1)
+def steam_game_names():
+    """Map installed app IDs to titles using native Steam appmanifests."""
+    roots = [Path.home() / '.steam/debian-installation/steamapps',
+             Path.home() / '.local/share/Steam/steamapps',
+             Path.home() / '.steam/steam/steamapps']
+    for root in list(roots):
+        try:
+            data = (root / 'libraryfolders.vdf').read_text(errors='replace')
+            for folder in re.findall(r'"path"\\s*"([^"]+)"', data):
+                extra = Path(folder.replace('\\\\', '\\')) / 'steamapps'
+                if extra not in roots:
+                    roots.append(extra)
+        except OSError:
+            pass
+    result = {}
+    for root in roots:
+        try:
+            for file in root.glob('appmanifest_*.acf'):
+                match = re.fullmatch(r'appmanifest_(\\d+)\\.acf', file.name)
+                if not match:
+                    continue
+                name = re.search(r'"name"\\s*"([^"]+)"', file.read_text(errors='replace'), re.I)
+                if name:
+                    result[match.group(1)] = name.group(1).strip()
+        except OSError:
+            pass
+    return result
+
+
+def capture_game_name(remote):
+    match = re.search(r'(?:^|/)(?:fg|bg)_(\\d+)_20\\d{6}_\\d{6}', remote)
+    if not match:
+        match = re.search(r'(?:^|/)(\\d+)_\\d{14}_\\d+\\.(?:png|jpg|jpeg|webp)', remote)
+    return steam_game_names().get(match.group(1), '') if match else ''
 
 
 def record_scan_status(directory, payload):
@@ -70,7 +109,7 @@ def sha256_file(path: Path):
 
 
 def send_file(base_url: str, token: str, client: str, account: str,
-              path: Path, remote: str, stat, sha256: str, rate_mib: float):
+              path: Path, remote: str, stat, sha256: str, rate_mib: float, game_name: str = ''):
     url = urlsplit(base_url)
     if url.scheme not in {'http', 'https'} or not url.hostname or url.query or url.fragment:
         raise ValueError('Server URL must be an HTTP(S) origin, optionally with a base path')
@@ -86,6 +125,7 @@ def send_file(base_url: str, token: str, client: str, account: str,
             'Content-Length': str(stat.st_size), 'X-SPC-Token': token,
             'X-SPC-SHA256': sha256, 'X-SPC-Modified': str(stat.st_mtime),
             'Content-Type': 'application/octet-stream',
+            **({'X-SPC-Game-Name': game_name} if game_name else {}),
         }.items():
             conn.putheader(key, value)
         conn.endheaders()
@@ -158,7 +198,7 @@ def sync(config: dict):
                     continue
                 send_file(config['server'], config['token'], config['client_id'],
                           config['steam_account'], path, remote, stat, sha,
-                          float(config.get('max_mib_per_second', 0)))
+                          float(config.get('max_mib_per_second', 0)), capture_game_name(remote))
                 if fingerprint(path, path.stat()) != fp:
                     LOG.info('Changed during transfer; will retry: %s', remote)
                     continue
