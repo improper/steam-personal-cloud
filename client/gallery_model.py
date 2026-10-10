@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 import re
@@ -75,7 +75,7 @@ def _game_and_datetime(source, modified):
     if date_match:
         try:
             digits = (date_match.group(2) + date_match.group(3)) if m else (date_match.group(1) + date_match.group(2))
-            dt = datetime.strptime(digits, '%Y%m%d%H%M%S')
+            dt = datetime.strptime(digits, '%Y%m%d%H%M%S').replace(tzinfo=timezone.utc).astimezone()
         except ValueError:
             pass
     if dt is None and modified:

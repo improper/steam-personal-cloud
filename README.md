@@ -1,4 +1,4 @@
-# Steam Personal Cloud — prototype v0.2
+# Steam Personal Cloud — native gallery preview v0.3
 
 A **self-hosted Steam capture backup and Immich ingest pipeline**. Steam clients only read completed-enough files and send them at a configurable rate; the family server does FFmpeg processing and Immich uploads. Steam's original files are never modified or deleted.
 
@@ -56,6 +56,18 @@ The local dashboard is read-only and listens only on `127.0.0.1:18787`; it does 
 **Steam Personal Cloud Gallery** is a fullscreen-capable **native Qt6 Linux application**, separate from the technical **Steam Personal Cloud Diagnostics** browser dashboard. Install the newest Ubuntu `.deb`, then add `Steam Personal Cloud Gallery` to Steam from the Xubuntu Games menu, or browse to `/usr/bin/steam-personal-cloud-gallery` as a non-Steam game. It displays large, selectable screenshot/video tiles, local/backup/Immich progress badges, optional details, and periodic refresh. The app supports Steam Input mapped to directional keys/Enter/Escape and tries the available Linux gamepad device (best effort). Screenshot viewing works before upload; video playback starts once processed by Immich using authenticated byte-range streaming. Deletion asks separately for **Local**, **Immich**, or **Both**, then confirms. Local media goes to Xubuntu Trash, Immich assets to Immich Trash (never forced permanent deletion). The original server inbox archive is not automatically erased.
 
 Details and hardware caveats are in [docs/native-gallery.md](docs/native-gallery.md). This is an unvalidated preview on the Xubuntu MacBook hardware until a real controller/recording playback test succeeds.
+
+
+### Gallery refinements in the current preview
+
+- Saved Steam clips and temporary fg/bg recordings are grouped into one capture when they represent the same source session; metadata-only files such as \`gamerecording.pb\` never become gallery videos.
+- The gallery requests **Immich thumbnails first** once an asset is available. If unavailable, it displays a matching Steam-generated local thumbnail if that file exists.
+- Media opens in the **same native Qt window**, with automatic video playback, play/pause, seek bar and ±10-second controls. Video streams prefer Immich's transcoding and fall back to the original when conversion is not ready and the original codec is playable.
+- Large tile labels use the game title from Steam's installed app manifests, with capture date/time underneath. When no title can be resolved (e.g., a non-Steam game), a generic capture label replaces the raw identifier.
+- The client sends the game title with uploads; the server adds an Immich game-title tag and **optionally** updates the asset description (requires Immich \`asset.update\` permission). Existing asset tags retain the game ID and capture-date hierarchy; older captures need metadata backfill before they gain new title descriptions.
+- **Preparing for Immich** replaces the technical "Backed up" badge. File transfer details remain in the expandable advanced panel.
+
+Hardware playback and Steam-generated-thumbnail discovery still require testing on the Xubuntu game center. See [issue #10](https://github.com/improper/steam-personal-cloud/issues/10).
 
 ## Set up the Xubuntu gamecenter from source (alternative)
 
