@@ -210,6 +210,7 @@ class Viewer(QWidget):
             self.player.setSource(QUrl(media_url(item, 'video')) if item.immich_id and item.state == 'ready'
                                   else QUrl.fromLocalFile(item.local_path))
             QTimer.singleShot(0, self.player.play)
+            QTimer.singleShot(0, self.play_button.setFocus)
         else:
             message = QLabel('Waiting for Immich to prepare this recording.\nIt will become playable when video processing finishes.')
             message.setObjectName('subtitle')
@@ -580,7 +581,11 @@ class Gallery(QMainWindow):
     def eventFilter(self, watched, event):
         from PyQt6.QtCore import QEvent
         if event.type() == QEvent.Type.KeyPress and QApplication.activeModalWidget() is None:
-            if event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Up, Qt.Key.Key_Down, Qt.Key.Key_R, Qt.Key.Key_Delete):
+            if event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Up, Qt.Key.Key_Down,
+                               Qt.Key.Key_R, Qt.Key.Key_Delete, Qt.Key.Key_Escape, Qt.Key.Key_Backspace,
+                               Qt.Key.Key_Space) and (self.viewing or event.key() in (
+                                   Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Up, Qt.Key.Key_Down,
+                                   Qt.Key.Key_R, Qt.Key.Key_Delete)):
                 self.keyPressEvent(event)
                 return True
         return super().eventFilter(watched, event)
@@ -599,6 +604,14 @@ class Gallery(QMainWindow):
             if key in (Qt.Key.Key_Escape, Qt.Key.Key_Backspace):
                 self.close_delete_page()
                 return
+            if key in (Qt.Key.Key_Up, Qt.Key.Key_Down, Qt.Key.Key_Left, Qt.Key.Key_Right):
+                buttons = self.delete_page.findChildren(QPushButton)
+                focus = QApplication.focusWidget()
+                index = buttons.index(focus) if focus in buttons else 0
+                if buttons:
+                    buttons[(index + (1 if key in (Qt.Key.Key_Down, Qt.Key.Key_Right) else -1)) % len(buttons)].setFocus()
+                return
+            return
         if self.viewing and self.viewer and self.stack.currentWidget() == self.viewer:
             if key in (Qt.Key.Key_Escape, Qt.Key.Key_Backspace):
                 self.close_viewer()
