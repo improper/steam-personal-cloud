@@ -73,6 +73,15 @@ def register_gallery_routes(app, authorize, database, immich_url, immich_key, im
                 raise HTTPException(502, 'Too many Immich media redirects')
         except requests.RequestException as exc:
             raise HTTPException(502, 'Immich media temporarily unavailable') from exc
+        if kind == 'video' and upstream.status_code in (202, 404, 409, 422):
+            # Prefer transcoded playback; while conversion is pending, Immich's
+            # original can sometimes be played directly by Qt's media backend.
+            upstream.close()
+            try:
+                upstream = requests.get(immich_url + f'/api/assets/{asset_id}/original',
+                    headers=headers, stream=True, timeout=(5, 40), allow_redirects=False)
+            except requests.RequestException as exc:
+                raise HTTPException(503, 'Video is still preparing in Immich') from exc
         if upstream.status_code not in (200, 206):
             upstream.close()
             raise HTTPException(503 if upstream.status_code in (202, 404, 409, 422) else 502,
