@@ -129,27 +129,33 @@ def pretty_title(source, modified):
 
 
 def find_steam_thumbnail(path):
-    """Fallback only; Immich artwork is preferred when an asset exists."""
+    """Use Steam's cover/thumbnail if one exists, without searching arbitrary files."""
     p = Path(path)
     folder = p if p.is_dir() else p.parent
     if not folder.is_dir():
         return ''
-    candidates = ('thumbnail.jpg', 'thumbnail.png', 'thumb.jpg', 'thumb.png',
-                  'preview.jpg', 'preview.png', 'poster.jpg', 'poster.png',
-                  'cover.jpg', 'cover.png')
-    for name in candidates:
-        result = folder / name
-        if result.is_file() and not result.is_symlink():
-            return str(result)
-    # Steam sometimes stores a thumbnail alongside a nested video session.
-    for subdir in ('thumbnails', 'thumbs', 'video'):
-        nested = folder / subdir
-        if not nested.is_dir():
+    locations = [folder, folder / 'thumbnails', folder / 'thumbs', folder / 'video']
+    # A saved clip can contain video/fg_<appid>_<date>_<time>/session.mpd.
+    video = folder / 'video'
+    if video.is_dir() and not video.is_symlink():
+        try:
+            locations.extend(sub for sub in list(video.iterdir())[:32]
+                             if sub.is_dir() and not sub.is_symlink())
+        except OSError:
+            pass
+    names = ('thumbnail', 'thumb', 'preview', 'poster', 'cover')
+    extensions = {'.jpg', '.jpeg', '.png', '.webp'}
+    for location in locations:
+        if not location.is_dir() or location.is_symlink():
             continue
-        for name in candidates:
-            result = nested / name
-            if result.is_file() and not result.is_symlink():
-                return str(result)
+        try:
+            for candidate in list(location.iterdir())[:120]:
+                if (candidate.is_file() and not candidate.is_symlink()
+                    and candidate.suffix.lower() in extensions
+                    and candidate.stem.lower().startswith(names)):
+                    return str(candidate)
+        except OSError:
+            continue
     return ''
 
 
