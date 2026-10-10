@@ -28,6 +28,7 @@ class GalleryTests(unittest.TestCase):
             (videos / 'session1').mkdir()
             clip = videos / 'session1' / 'chunk.m4s'
             clip.write_bytes(b'fragment')
+            (videos / 'session1' / 'session.mpd').write_text('<MPD />')
             conf = base / 'client.json'
             conf.write_text(json.dumps({'client_id':'testbox', 'steam_account':'user123',
                                         'screenshots':str(shots),'recordings':str(videos),
@@ -49,6 +50,42 @@ class GalleryTests(unittest.TestCase):
             self.assertEqual(video_item.state,'waiting')
             self.assertEqual(gallery.validate_local_target(photo_item,json.loads(conf.read_text())),photo)
             self.assertEqual(gallery.validate_local_target(video_item,json.loads(conf.read_text())),clip.parent)
+
+    def test_clip_nested_fragments_are_one_video_and_ignore_recording_metadata(self):
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            shots = base / 'shots'
+            videos = base / 'videos'
+            shots.mkdir(); videos.mkdir()
+            (videos / 'gamerecording.pb').write_bytes(b'metadata')
+            clip = videos / 'clips' / 'clip_220_20261009_193426' / 'video' / 'fg_220_20261009_193426'
+            clip.mkdir(parents=True)
+            (clip / 'session.mpd').write_text('<MPD />')
+            (clip / 'a.m4s').write_bytes(b'first')
+            (clip / 'b.m4s').write_bytes(b'second')
+            config = base / 'client.json'
+            config.write_text(json.dumps({'client_id': 'box', 'steam_account': 'steam',
+                'screenshots': str(shots), 'recordings': str(videos),
+                'state_dir': str(base/'state'), 'settle_seconds': 0}))
+            snap = {'configured': True, 'local': {}, 'remote': {'connected': True, 'items': [
+                {'source': 'box/steam/recordings/clips/clip_220_20261009_193426/video/fg_220_20261009_193426',
+                 'kind': 'video', 'status': 'complete',
+                 'immich_id': 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+                 'game_name': 'Test Game', 'updated_at': 9}]}}
+            with patch.object(gallery, 'local_snapshot', return_value=snap):
+                items, _ = gallery.make_gallery(config)
+            self.assertEqual(len(items), 1)
+            self.assertEqual(items[0].name, 'Test Game')
+            self.assertEqual(items[0].state, 'ready')
+            self.assertEqual(items[0].source, 'recordings/clips/clip_220_20261009_193426')
+            self.assertTrue(items[0].subtitle)
+
+    def test_generic_recordings_are_not_phantom_videos(self):
+        self.assertIsNone(gallery.canonical_recording('recordings/gamerecording.pb'))
+        self.assertIsNone(gallery.canonical_recording('recordings/session.pb'))
+        self.assertEqual(gallery.canonical_recording(
+            'recordings/clips/clip_220_20261009_193426/video/fg_220_20261009_193426/session.mpd'),
+            'recordings/clips/clip_220_20261009_193426')
 
     def test_trash_preserves_capture_and_writes_recovery_metadata(self):
         with TemporaryDirectory() as directory:
