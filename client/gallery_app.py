@@ -431,50 +431,124 @@ class Gallery(QMainWindow):
         self.refresh()
 
     def delete_dialog(self, item, parent=None):
+        """Inline action sheet; never spawn a second Steam-focus window."""
         config = read_json(Path.home() / '.config/steam-personal-cloud/client.json') or {}
         local = bool(item.local_path)
         remote = bool(item.immich_id and item.state == 'ready')
         if not local and not remote:
-            QMessageBox.information(parent or self, 'Delete', 'No local copy or available Immich asset can be deleted.')
+            if self.viewer:
+                self.viewer.notice.setText('This capture has no removable local or Immich copy.')
             return
-        dialog = QDialog(parent or self)
-        dialog.setWindowTitle('Remove capture')
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel('Choose where to remove this capture.\nLocal deletion moves the source into your Trash; Immich deletion moves it into Immich Trash.'))
-        choices = []
-        for key, title, enabled in [('local', 'Local copy only', local), ('immich', 'Immich copy only', remote), ('both', 'Both local and Immich copies', local and remote)]:
-            if enabled:
-                button = QPushButton(title)
-                button.clicked.connect(lambda _=False, value=key: (choices.append(value), dialog.accept()))
-                layout.addWidget(button)
-        back = QPushButton('Cancel')
-        back.clicked.connect(dialog.reject)
-        layout.addWidget(back)
-        if dialog.exec() != QDialog.DialogCode.Accepted or not choices:
-            return
-        choice = choices[0]
-        confirm = QMessageBox.question(parent or self, 'Confirm deletion',
-             'Remove "' + item.name + '" from ' + ('both destinations' if choice == 'both' else choice) + '?\n\nThis affects your original media. Are you sure?',
-             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Cancel)
-        if confirm != QMessageBox.StandardButton.Yes:
-            return
-        try:
-            if choice in ('immich', 'both'):
-                req = Request(config['server'].rstrip('/') + '/api/media/' + item.immich_id + '/immich',
-                              headers={'X-SPC-Token': config['token']}, method='DELETE')
-                with urlopen(req, timeout=18) as response:
-                    if response.status != 200:
-                        raise RuntimeError('Server returned HTTP ' + str(response.status))
-            if choice in ('local', 'both'):
-                from gallery_trash import move_to_trash
-                move_to_trash(validate_local_target(item, config))
-            QMessageBox.information(parent or self, 'Removed', 'Capture removal completed. You can refresh the library now.')
+        self.delete_page = QWidget()
+        layout = QVBoxLayout(self.delete_page)
+        layout.setContentsMargins(90, 60, 90, 60)
+        layout.setSpacing(24)
+        heading = QLabel('Remove capture')
+        heading.setObjectName('headline')
+        layout.addWidget(heading)
+        what = QLabel(f'{item.name}  ·  {item.subtitle}')
+        what.setObjectName('subtitle')
+        layout.addWidget(what)
+        self.delete_hint = QLabel('Choose where to remove this capture.\nLocal goes to your Xubuntu Trash; Immich goes to Immich Trash.\nThe original server inbox archive is retained.')
+        self.delete_hint.setObjectName('subtitle')
+        self.delete_hint.setWordWrap(True)
+        layout.addWidget(self.delete_hint)
+        self.delete_actions = QWidget()
+        buttons = QVBoxLayout(self.delete_actions)
+        layout.addWidget(self.delete_actions)
+        layout.addStretch(1)
+        cancel = QPushButton('←  Back to capture')
+        cancel.clicked.connect(self.close_delete_page)
+        layout.addWidget(cancel)
+        for choice, label, enabled in [
+            ('local', 'Remove local copy', local),
+            ('immich', 'Move Immich copy to Trash', remote),
+            ('both', 'Remove both copies', local and remote)]:
+            if not enabled:
+                continue
+            button = QPushButton(label)
+            button.clicked.connect(lambda _=False, c=choice: confirm(c))
+            buttons.addWidget(button)
+
+        def confirm(choice):
+            self.delete_hint.setText(
+                'Confirm removal from ' + ('both locations' if choice == 'both' else choice) +
+                '.\nYour original local media may not be recoverable after Trash is emptied.')
+            while buttons.count():
+                item_layout = buttons.takeAt(0)
+                if item_layout.widget():
+                    item_layout.widget().deleteLater()
+            yes = QPushButton('Yes, move to Trash')
+            yes.clicked.connect(lambda: execute(choice))
+            buttons.addWidget(yes)
+            undo = QPushButton('No, go back')
+            undo.clicked.connect(self.close_delete_page)
+            buttons.addWidget(undo)
+            yes.setFocus()
+
+        def execute(choice):
+            try:
+                if choice in ('immich', 'both'):
+                    req = Request(config['server'].rstrip('/') + '/api/media/' + item.immich_id + '/immich',
+                                  headers={'X-SPC-Token': config['token']}, method='DELETE')
+                    with urlopen(req, timeout=18) as response:
+                        if response.status != 200:
+                            raise RuntimeError('Server returned HTTP ' + str(response.status))
+                if choice in ('local', 'both'):
+                    from gallery_trash import move_to_trash
+                    move_to_trash(validate_local_target(item, config))
+            except Exception as exc:
+                self.delete_hint.setText('Removal needs attention: ' + str(exc) +
+                    '\nCheck Diagnostics before retrying; one location might have succeeded.')
+                return
+            self.close_delete_page()
+            self.close_viewer()
             self.signature = None
-        except Exception as exc:
-            QMessageBox.warning(parent or self, 'Removal not complete', str(exc))
-        self.refresh()
+            self.refresh()
+
+        self.stack.addWidget(self.delete_page)
+        self.stack.setCurrentWidget(self.delete_page)
+        first = buttons.itemAt(0)
+        if first and first.widget():
+            first.widget().setFocus()
+
+    def close_delete_page(self):
+        page = getattr(self, 'delete_page', None)
+        if page:
+            self.stack.setCurrentWidget(self.viewer if self.viewer else self.gallery_page)
+            self.stack.removeWidget(page)
+            page.deleteLater()
+            self.delete_page = None
 
     def on_gamepad(self, action):
+        if getattr(self, 'delete_page', None) and self.stack.currentWidget() == self.delete_page:
+            if action == 'back':
+                self.close_delete_page()
+            elif action == 'select':
+                focused = QApplication.focusWidget()
+                if isinstance(focused, QPushButton):
+                    focused.click()
+            elif action in ('up','down'):
+                buttons = self.delete_page.findChildren(QPushButton)
+                focused = QApplication.focusWidget()
+                index = buttons.index(focused) if focused in buttons else 0
+                if buttons:
+                    buttons[(index + (1 if action == 'down' else -1)) % len(buttons)].setFocus()
+            return
+        if self.viewing and self.viewer:
+            if action == 'back':
+                self.close_viewer()
+            elif action == 'select':
+                focused = QApplication.focusWidget()
+                if isinstance(focused, QPushButton) and self.viewer.isAncestorOf(focused):
+                    focused.click()
+                else:
+                    self.viewer.toggle_play()
+            elif action in ('left', 'right'):
+                self.viewer.skip(-10000 if action == 'left' else 10000)
+            elif action == 'details':
+                self.delete_dialog(self.viewer.item)
+            return
         dialog = QApplication.activeModalWidget()
         if dialog:
             if action == 'back':
@@ -521,6 +595,23 @@ class Gallery(QMainWindow):
 
     def keyPressEvent(self, event):
         key = event.key()
+        if getattr(self, 'delete_page', None) and self.stack.currentWidget() == self.delete_page:
+            if key in (Qt.Key.Key_Escape, Qt.Key.Key_Backspace):
+                self.close_delete_page()
+                return
+        if self.viewing and self.viewer and self.stack.currentWidget() == self.viewer:
+            if key in (Qt.Key.Key_Escape, Qt.Key.Key_Backspace):
+                self.close_viewer()
+                return
+            if key == Qt.Key.Key_Space:
+                self.viewer.toggle_play()
+                return
+            if key in (Qt.Key.Key_Left, Qt.Key.Key_Right):
+                self.viewer.skip(-10000 if key == Qt.Key.Key_Left else 10000)
+                return
+            if key == Qt.Key.Key_Delete:
+                self.delete_dialog(self.viewer.item)
+                return
         if key == Qt.Key.Key_R:
             self.refresh()
             return
