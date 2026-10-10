@@ -40,3 +40,29 @@ Folder IDs are no longer displayed as user-facing titles. We consult Steam \`app
 Saved Steam clip folders may embed the same \`fg_...\` video session already present in a temporary recordings folder. A ready saved clip takes precedence in the local gallery; **neither copy is erased** by deduplication. All database/media deletion actions remain explicit and separate. Existing duplicate Immich assets are not silently removed.
 
 A saved clip's metadata may refer to multiple Steam DASH sessions; the video remuxer still needs real-recording validation. Use the error shown in Advanced details if playback remains unavailable.
+
+
+## Console-style viewing and settings
+
+The gallery uses explicit selected filter tabs, large focus outlines, and tiles that scroll without compressing their capture labels. The active filter determines the viewer's browsing order. **Previous / Next** and an **N of M** counter let you browse without returning to the grid. The order is held steady while viewing, and Back returns focus to the last viewed capture. Navigation stops at the first and last capture.
+
+The viewer keeps the entire photo or video visible. Its header and controls collapse after four seconds of inactivity while a photo is available or video is playing. Move the pointer or use a navigation input to reveal them; the first navigation/activation input only reveals controls. Direct play/pause, previous/next, and Back shortcuts still act immediately. Controls stay visible while paused, loading, or showing an error. Remote photos load in the background, retaining the local image when available; a failed request offers Retry. Video playback offers replay, ±10-second seeking, mute, and volume. Playback never automatically advances to another capture.
+
+| Action | Keyboard | Standard Xbox-style raw joystick |
+| --- | --- | --- |
+| Navigate | Arrows | D-pad / stick |
+| Activate focused control | Enter | A |
+| Back | Escape | B |
+| Play / pause video | Space | X |
+| Previous / next capture | Page Up / Page Down | LB / RB |
+| Details | I | Y |
+| Settings | S | Menu |
+| Fullscreen | F11 | Settings button |
+
+Steam Input can map the keyboard shortcuts above. Raw Linux joystick button numbering varies by controller, so these labels describe the standard Xbox-style layout rather than guaranteed Nintendo or PlayStation mappings. Tab navigation is also supported. On sliders, left/right adjusts playback by ten seconds or volume by five percent. Space controls playback in the viewer and does not activate a focused removal button.
+
+**Settings** is an inline screen with video autoplay (default on), automatic control hiding (on), volume (80%), mute (off), and launch fullscreen (off). Preferences are saved with Qt QSettings, separately from pairing configuration; the `--fullscreen` launch argument overrides the saved launch preference. Changes apply immediately, Restore defaults resets preferences, and Toggle fullscreen now changes the current window. Exit gallery is an explicit Settings action; Back at the library does not leave fullscreen or exit the app.
+
+**Details** shows capture type, date, copy availability, and any capture processing error. Opening Details, Settings, or removal pauses video; returning leaves it paused. Removal remains an explicit **Remove…** action and the final confirmation defaults to **No, go back**. Secondary screens block viewer playback, browsing, and removal shortcuts.
+
+Offscreen tests exercise controller navigation, view sizing at 720p/1080p, photo loading failures, preference persistence, and playback controls. Actual Steam Input/raw controller operation, Qt video auto-hide behavior, and live Immich streaming still require validation on the Xubuntu game center.

@@ -23,6 +23,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Qt runtime
         run: sudo apt-get update -qq && sudo apt-get install -y python3-pyqt6 python3-pyqt6.qtmultimedia
+      - name: Test controller and viewer UX
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: /usr/bin/python3 -m unittest discover -s tests -p test_gallery_ux.py -v
       - name: Import the native Qt gallery (system Python)
         env:
           QT_QPA_PLATFORM: offscreen

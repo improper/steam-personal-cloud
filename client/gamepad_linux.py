@@ -62,8 +62,8 @@ class JoystickReader:
                     self.emit('select')
                 elif number == 1:
                     self.emit('back')
-                elif number in (2, 3):
-                    self.emit('details')
+                elif number in (2, 3, 4, 5, 7):
+                    self.emit({2: 'play', 3: 'details', 4: 'previous', 5: 'next', 7: 'settings'}[number])
             elif type_ & 0x02 and number in (0, 1, 6, 7):
                 # Supports thumbstick and common Linux hat axes.
                 if value < -18000:
