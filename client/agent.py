@@ -125,7 +125,7 @@ def send_file(base_url: str, token: str, client: str, account: str,
             'Content-Length': str(stat.st_size), 'X-SPC-Token': token,
             'X-SPC-SHA256': sha256, 'X-SPC-Modified': str(stat.st_mtime),
             'Content-Type': 'application/octet-stream',
-            **({'X-SPC-Game-Name': game_name} if game_name else {}),
+            **({'X-SPC-Game-Name': quote(game_name, safe='')} if game_name else {}),
         }.items():
             conn.putheader(key, value)
         conn.endheaders()

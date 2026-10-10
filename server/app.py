@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from urllib.parse import unquote
 from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -360,7 +361,9 @@ async def receive(client: str, account: str, rel: str, request: Request,
                   x_spc_modified: Optional[str] = Header(default=None),
                   x_spc_game_name: Optional[str] = Header(default=None)):
     authorize(x_spc_token, client, account)
-    game_name = (x_spc_game_name or '').strip()
+    if len(x_spc_game_name or '') > 900:
+        raise HTTPException(400, 'Game name too long')
+    game_name = unquote(x_spc_game_name or '').strip()
     if len(game_name) > 100 or any(ord(c) < 32 or ord(c) == 127 for c in game_name):
         raise HTTPException(400, 'Invalid game name')
     identifier = valid_path(client, account, rel)
