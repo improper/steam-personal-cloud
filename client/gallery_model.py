@@ -13,7 +13,7 @@ from local_status import local_snapshot, read_json
 SESSION_RE = re.compile(r'^(?:fg|bg|clip)_[A-Za-z0-9_-]+$', re.I)
 GAME_RE = re.compile(r'(?:^|[/_])(?:fg|bg)_(\d+)_(\d{8})_(\d{6})(?:$|/)', re.I)
 DATE_RE = re.compile(r'(20\d{6})[_-](\d{6})')
-APP_RE = re.compile(r'appmanifest_(\d+)\.acf$')
+SHOT_RE = re.compile(r'(?:^|/)(\d+)_(20\d{6})(\d{6})_\d+\.(?:png|jpe?g|webp)$', re.I)
 SESSION_ID_RE = re.compile(r'(?:fg|bg)_\d+_20\d{6}_\d{6}')
 
 
@@ -67,7 +67,7 @@ def canonical_recording(relative):
 
 
 def _game_and_datetime(source, modified):
-    m = GAME_RE.search(source)
+    m = GAME_RE.search(source) or SHOT_RE.search(source)
     game_id = m.group(1) if m else ''
     date_match = m or DATE_RE.search(source)
     dt = None

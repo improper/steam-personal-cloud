@@ -10,10 +10,10 @@ import sys
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-from PyQt6.QtCore import QObject, QRunnable, QSize, Qt, QThread, QTimer, QUrl, pyqtSignal
-from PyQt6.QtGui import QColor, QIcon, QImageReader, QPixmap, QFont
+from PyQt6.QtCore import QObject, QRunnable, QSize, Qt, QThread, QTimer, QUrl, QEvent, pyqtSignal
+from PyQt6.QtGui import QColor, QImageReader, QPixmap, QPainter
 from PyQt6.QtWidgets import (QApplication, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
-    QMainWindow, QMessageBox, QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget, QStackedWidget, QProgressBar)
+    QMainWindow, QMessageBox, QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget, QStackedWidget, QProgressBar, QSizePolicy)
 from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 
@@ -32,7 +32,7 @@ QLabel#summary { background: #19283c; color: #dceaff; padding: 11px 20px; border
 QPushButton { background: #233954; color: #e4f0ff; font-size: 18px; font-weight: 600; border: 2px solid #304b67; border-radius: 13px; padding: 11px 19px; }
 QPushButton:focus { border: 3px solid #80ceff; background: #2d5476; }
 QPushButton:hover { background: #355977; }
-QPushButton#tile { background: #1a2a3f; text-align: center; padding: 10px; min-height: 166px; }
+QPushButton#tile { background: #1a2a3f; text-align: center; padding: 0; }
 QPushButton#tile:focus { border: 4px solid #9ae6ff; background: #2e5775; }
 QLabel#tileName { color: #e6f2ff; font-size: 18px; font-weight: 600; }
 QLabel#detail { color: #9db2cc; font-size: 14px; }
@@ -94,6 +94,47 @@ class ImageTask(QRunnable):
             pass
 
 
+class CoverButton(QPushButton):
+    """Paint cover art to the inside edge of the focus border."""
+    def __init__(self, text):
+        super().__init__(text)
+        self.cover = QPixmap()
+
+    def paintEvent(self, event):
+        if self.cover.isNull():
+            return super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        border = 4 if self.hasFocus() else 2
+        area = self.rect().adjusted(border, border, -border, -border)
+        cover = self.cover.scaled(area.size(), Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                                  Qt.TransformationMode.SmoothTransformation)
+        painter.drawPixmap(area, cover, cover.rect().adjusted(
+            (cover.width() - area.width()) // 2, (cover.height() - area.height()) // 2,
+            -(cover.width() - area.width() + 1) // 2, -(cover.height() - area.height() + 1) // 2))
+        painter.setPen(QColor('#9ae6ff' if self.hasFocus() else '#304b67'))
+        for inset in range(border):
+            painter.drawRect(self.rect().adjusted(inset, inset, -inset - 1, -inset - 1))
+
+
+class FitPhoto(QLabel):
+    """Keep the complete image visible as the viewer changes size."""
+    def __init__(self, pix):
+        super().__init__()
+        self.original = pix
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setMinimumSize(1, 1)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        if pix.isNull():
+            self.setText('Preview is not available yet')
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if not self.original.isNull():
+            self.setPixmap(self.original.scaled(self.contentsRect().size(),
+                Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+
+
 class Tile(QWidget):
     def __init__(self, item, on_open, parent=None):
         super().__init__(parent)
@@ -101,9 +142,11 @@ class Tile(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(7)
-        self.button = QPushButton('▶  VIDEO' if item.kind == 'video' else '▣  SCREENSHOT')
+        self.button = CoverButton('▶  VIDEO' if item.kind == 'video' else '▣  SCREENSHOT')
         self.button.setObjectName('tile')
-        self.button.setMinimumSize(226, 168)
+        self.button.setFixedHeight(168)
+        self.button.setMinimumWidth(1)
+        self.setFixedWidth(240)
         self.button.setIconSize(QSize(220, 144))
         self.button.clicked.connect(lambda: on_open(self.item))
         self.button.setAccessibleName(item.name + ', ' + item.kind + ', ' + BADGES.get(item.state, BADGES['waiting'])[0])
@@ -128,11 +171,9 @@ class Tile(QWidget):
 
     def set_preview(self, pix):
         if not pix.isNull():
-            cover = pix.scaled(QSize(220, 144), Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                               Qt.TransformationMode.SmoothTransformation)
-            cover = cover.copy((cover.width() - 220) // 2, (cover.height() - 144) // 2, 220, 144)
-            self.button.setIcon(QIcon(cover))
+            self.button.cover = pix
             self.button.setText('')
+            self.button.update()
 
 
 class Viewer(QWidget):
@@ -142,7 +183,7 @@ class Viewer(QWidget):
         self.item = item
         self.player = None
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(28, 16, 28, 20)
+        outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(14)
         top = QHBoxLayout()
         headings = QVBoxLayout()
@@ -165,9 +206,6 @@ class Viewer(QWidget):
         self.buffering.setFixedHeight(8)
         self.buffering.hide()
         if item.kind == 'photo':
-            self.photo = QLabel()
-            self.photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.photo.setMinimumHeight(350)
             self.pix = local_image(item.local_path, QSize(2200, 1400)) if item.local_path else QPixmap()
             if item.immich_id and item.state == 'ready':
                 try:
@@ -178,16 +216,13 @@ class Viewer(QWidget):
                         self.pix = immich_pix
                 except (OSError, TimeoutError):
                     pass
-            if self.pix.isNull():
-                self.photo.setText('Preview is not available yet')
-            else:
-                self.photo.setPixmap(self.pix.scaled(QSize(1550, 720),
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation))
+            self.photo = FitPhoto(self.pix)
             outer.addWidget(self.photo, 1)
         elif (item.immich_id and item.state == 'ready') or (item.local_path and item.local_path.lower().endswith('.mp4')):
             self.video = QVideoWidget(self)
-            self.video.setMinimumHeight(340)
+            self.video.setMinimumSize(1, 1)
+            self.video.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+            self.video.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
             outer.addWidget(self.video, 1)
             self.player = QMediaPlayer(self)
             self.audio = QAudioOutput(self)
@@ -302,8 +337,12 @@ class Gallery(QMainWindow):
         root = QWidget()
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
-        self.stack.addWidget(root)
-        self.gallery_page = root
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll.setWidget(root)
+        self.stack.addWidget(self.scroll)
+        self.gallery_page = self.scroll
         self.viewer = None
         self.layout = QVBoxLayout(root)
         self.layout.setContentsMargins(38, 22, 38, 24)
@@ -344,15 +383,11 @@ class Gallery(QMainWindow):
         refresh.clicked.connect(self.refresh)
         actions.addWidget(refresh)
         self.layout.addLayout(actions)
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.wrapper = QWidget()
         self.grid = QGridLayout(self.wrapper)
         self.grid.setSpacing(22)
-        self.grid.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.scroll.setWidget(self.wrapper)
-        self.layout.addWidget(self.scroll, 1)
+        self.grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.layout.addWidget(self.wrapper, 1)
         foot = QLabel('D-pad / arrows  Navigate       A / Enter  View       B / Esc  Back       Delete  Actions       R  Refresh')
         foot.setObjectName('hint')
         self.layout.addWidget(foot)
@@ -410,10 +445,15 @@ class Gallery(QMainWindow):
         while self.grid.count():
             holder = self.grid.takeAt(0)
             if holder.widget():
+                holder.widget().hide()
                 holder.widget().deleteLater()
         self.tiles = {}
         shown = [x for x in self.items if self.filter == 'all' or x.kind == self.filter]
-        max_columns = max(3, min(6, max(1, self.width() - 70) // 260))
+        max_columns = self.column_count()
+        self.columns = max_columns
+        for col in range(6):
+            self.grid.setColumnStretch(col, 0)
+            self.grid.setColumnMinimumWidth(col, 0)
         for i, item in enumerate(shown):
             tile = Tile(item, self.open_item)
             self.grid.addWidget(tile, i // max_columns, i % max_columns)
@@ -427,6 +467,7 @@ class Gallery(QMainWindow):
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
             empty.setStyleSheet('font-size: 23px; color:#9ebbd9; padding: 100px;')
             self.grid.addWidget(empty, 0, 0)
+        self.wrapper.adjustSize()
         if focus_key and focus_key in self.tiles:
             self.tiles[focus_key].button.setFocus()
         elif self.tiles:
@@ -445,9 +486,13 @@ class Gallery(QMainWindow):
 
     def open_item(self, item):
         self.viewing = True
+        self.viewer_key = item.key
         self.viewer = Viewer(item, self.close_viewer, self.delete_dialog, self)
         self.stack.addWidget(self.viewer)
         self.stack.setCurrentWidget(self.viewer)
+        controls = self.viewer.findChildren(QPushButton)
+        if controls:
+            self.focus_control(self.viewer.play_button if self.viewer.player else controls[0])
 
     def close_viewer(self):
         if self.viewer:
@@ -457,6 +502,9 @@ class Gallery(QMainWindow):
             self.viewer.deleteLater()
             self.viewer = None
         self.viewing = False
+        tile = self.tiles.get(self.viewer_key) if hasattr(self, 'viewer_key') else None
+        if tile:
+            self.focus_control(tile.button)
         self.refresh()
 
     def delete_dialog(self, item, parent=None):
@@ -506,6 +554,7 @@ class Gallery(QMainWindow):
             while buttons.count():
                 item_layout = buttons.takeAt(0)
                 if item_layout.widget():
+                    item_layout.widget().hide()
                     item_layout.widget().deleteLater()
             yes = QPushButton('Yes, move to Trash')
             yes.clicked.connect(lambda: execute(choice))
@@ -548,73 +597,106 @@ class Gallery(QMainWindow):
             self.stack.removeWidget(page)
             page.deleteLater()
             self.delete_page = None
+            if self.viewer:
+                self.focus_control(self.viewer.findChildren(QPushButton)[-1])
+
+    def column_count(self):
+        return max(1, min(6, (self.scroll.viewport().width() - 76 + 22) // 262))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'scroll') and hasattr(self, 'tiles'):
+            QTimer.singleShot(0, self.reflow)
+
+    def reflow(self):
+        if hasattr(self, 'grid') and self.column_count() != getattr(self, 'columns', None):
+            self.render()
+
+    def focus_control(self, control):
+        control.setFocus(Qt.FocusReason.OtherFocusReason)
+        if self.stack.currentWidget() == self.gallery_page:
+            self.scroll.ensureWidgetVisible(control, 20, 20)
+
+    def navigate(self, action):
+        page = self.stack.currentWidget()
+        controls = [w for w in page.findChildren(QWidget)
+                    if isinstance(w, (QPushButton, QSlider)) and w.isVisible()
+                    and w.isEnabled() and w.focusPolicy() != Qt.FocusPolicy.NoFocus]
+        if not controls:
+            return
+        current = QApplication.focusWidget()
+        if current not in controls:
+            self.focus_control(controls[0])
+            return
+        if isinstance(current, QSlider) and action in ('left', 'right'):
+            current.setValue(max(current.minimum(), min(current.maximum(),
+                current.value() + (10000 if action == 'right' else -10000))))
+            if self.viewer and self.viewer.player:
+                self.viewer.player.setPosition(current.value())
+            return
+        origin = current.mapTo(page, current.rect().center())
+        candidates = []
+        for control in controls:
+            if control is current:
+                continue
+            center = control.mapTo(page, control.rect().center())
+            dx, dy = center.x() - origin.x(), center.y() - origin.y()
+            forward, sideways = {'left': (-dx, abs(dy)), 'right': (dx, abs(dy)),
+                                 'up': (-dy, abs(dx)), 'down': (dy, abs(dx))}[action]
+            if forward > 0:
+                candidates.append((forward + sideways * 3, sideways, control))
+        if candidates:
+            self.focus_control(min(candidates, key=lambda candidate: candidate[:2])[2])
 
     def on_gamepad(self, action):
-        if getattr(self, 'delete_page', None) and self.stack.currentWidget() == self.delete_page:
-            if action == 'back':
-                self.close_delete_page()
-            elif action == 'select':
-                focused = QApplication.focusWidget()
-                if isinstance(focused, QPushButton):
-                    focused.click()
-            elif action in ('up','down'):
-                buttons = self.delete_page.findChildren(QPushButton)
-                focused = QApplication.focusWidget()
-                index = buttons.index(focused) if focused in buttons else 0
-                if buttons:
-                    buttons[(index + (1 if action == 'down' else -1)) % len(buttons)].setFocus()
-            return
-        if self.viewing and self.viewer:
-            if action == 'back':
-                self.close_viewer()
-            elif action == 'select':
-                focused = QApplication.focusWidget()
-                if isinstance(focused, QPushButton) and self.viewer.isAncestorOf(focused):
-                    focused.click()
-                else:
-                    self.viewer.toggle_play()
-            elif action in ('left', 'right'):
-                self.viewer.skip(-10000 if action == 'left' else 10000)
-            elif action == 'details':
-                self.delete_dialog(self.viewer.item)
-            return
-        dialog = QApplication.activeModalWidget()
-        if dialog:
-            if action == 'back':
-                dialog.reject()
-            elif action == 'select':
-                focused = QApplication.focusWidget()
-                if isinstance(focused, QPushButton):
-                    focused.click()
-                elif isinstance(dialog, Viewer):
-                    dialog.toggle_play()
-            return
-        if action == 'details':
-            self.toggle_advanced()
-            return
-        buttons = [tile.button for tile in self.tiles.values()]
-        if action == 'select':
-            focused = next((b for b in buttons if b.hasFocus()), buttons[0] if buttons else None)
-            if focused:
+        if action in ('up', 'down', 'left', 'right'):
+            self.navigate(action)
+        elif action == 'select':
+            focused = QApplication.focusWidget()
+            if isinstance(focused, QPushButton) and self.stack.currentWidget().isAncestorOf(focused):
                 focused.click()
+            elif self.viewing and self.viewer:
+                self.viewer.toggle_play()
         elif action == 'back':
-            if self.isFullScreen():
+            if getattr(self, 'delete_page', None):
+                self.close_delete_page()
+            elif self.viewing:
+                self.close_viewer()
+            elif self.isFullScreen():
                 self.showMaximized()
-        elif action in ('up', 'down', 'left', 'right') and buttons:
-            col = max(3, min(6, max(1, self.width() - 70) // 260))
-            step = {'left': -1, 'right': 1, 'up': -col, 'down': col}[action]
-            current = next((i for i, b in enumerate(buttons) if b.hasFocus()), 0)
-            buttons[(current + step) % len(buttons)].setFocus()
+        elif action == 'details':
+            if self.viewing and self.viewer:
+                self.delete_dialog(self.viewer.item)
+            else:
+                self.toggle_advanced()
 
     def eventFilter(self, watched, event):
-        from PyQt6.QtCore import QEvent
+        if event.type() == QEvent.Type.FocusIn and isinstance(watched, (QPushButton, QSlider)):
+            if self.gallery_page.isAncestorOf(watched):
+                self.scroll.ensureWidgetVisible(watched, 20, 20)
         if event.type() == QEvent.Type.KeyPress and QApplication.activeModalWidget() is None:
-            if event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Up, Qt.Key.Key_Down,
-                               Qt.Key.Key_R, Qt.Key.Key_Delete, Qt.Key.Key_Escape, Qt.Key.Key_Backspace,
-                               Qt.Key.Key_Space) and (self.viewing or event.key() in (
-                                   Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Up, Qt.Key.Key_Down,
-                                   Qt.Key.Key_R, Qt.Key.Key_Delete)):
-                self.keyPressEvent(event)
+            actions = {Qt.Key.Key_Left: 'left', Qt.Key.Key_Right: 'right',
+                       Qt.Key.Key_Up: 'up', Qt.Key.Key_Down: 'down',
+                       Qt.Key.Key_Return: 'select', Qt.Key.Key_Enter: 'select',
+                       Qt.Key.Key_Escape: 'back', Qt.Key.Key_Backspace: 'back'}
+            if event.key() in actions:
+                self.on_gamepad(actions[event.key()])
+                return True
+            if event.key() == Qt.Key.Key_Space:
+                self.on_gamepad('select')
+                return True
+            if event.key() == Qt.Key.Key_R:
+                self.refresh()
+                return True
+            if event.key() == Qt.Key.Key_Delete:
+                focused = QApplication.focusWidget()
+                capture = next((tile.item for tile in self.tiles.values() if tile.button is focused), None)
+                if self.viewing and self.viewer:
+                    capture = self.viewer.item
+                if capture and not getattr(self, 'delete_page', None):
+                    if not self.viewing:
+                        self.open_item(capture)
+                    self.delete_dialog(capture)
                 return True
         return super().eventFilter(watched, event)
 
@@ -624,55 +706,10 @@ class Gallery(QMainWindow):
         self.gamepad.close()
         if self.worker and self.worker.isRunning():
             self.worker.wait(3500)
+        if self.viewer:
+            self.viewer.shutdown()
         super().closeEvent(event)
 
-    def keyPressEvent(self, event):
-        key = event.key()
-        if getattr(self, 'delete_page', None) and self.stack.currentWidget() == self.delete_page:
-            if key in (Qt.Key.Key_Escape, Qt.Key.Key_Backspace):
-                self.close_delete_page()
-                return
-            if key in (Qt.Key.Key_Up, Qt.Key.Key_Down, Qt.Key.Key_Left, Qt.Key.Key_Right):
-                buttons = self.delete_page.findChildren(QPushButton)
-                focus = QApplication.focusWidget()
-                index = buttons.index(focus) if focus in buttons else 0
-                if buttons:
-                    buttons[(index + (1 if key in (Qt.Key.Key_Down, Qt.Key.Key_Right) else -1)) % len(buttons)].setFocus()
-                return
-            return
-        if self.viewing and self.viewer and self.stack.currentWidget() == self.viewer:
-            if key in (Qt.Key.Key_Escape, Qt.Key.Key_Backspace):
-                self.close_viewer()
-                return
-            if key == Qt.Key.Key_Space:
-                self.viewer.toggle_play()
-                return
-            if key in (Qt.Key.Key_Left, Qt.Key.Key_Right):
-                self.viewer.skip(-10000 if key == Qt.Key.Key_Left else 10000)
-                return
-            if key == Qt.Key.Key_Delete:
-                self.delete_dialog(self.viewer.item)
-                return
-        if key == Qt.Key.Key_R:
-            self.refresh()
-            return
-        if key in (Qt.Key.Key_Down, Qt.Key.Key_Up, Qt.Key.Key_Left, Qt.Key.Key_Right):
-            tiles = [x.button for x in self.tiles.values()]
-            if tiles:
-                current = next((i for i, b in enumerate(tiles) if b.hasFocus()), 0)
-                stride = max(3, min(6, max(1, self.width() - 70) // 260))
-                diff = {Qt.Key.Key_Left: -1, Qt.Key.Key_Right: 1, Qt.Key.Key_Up: -stride, Qt.Key.Key_Down: stride}[key]
-                tiles[(current + diff) % len(tiles)].setFocus()
-                return
-        if key == Qt.Key.Key_Delete:
-            selected = next((k for k, b in self.tiles.items() if b.button.hasFocus()), None)
-            if selected:
-                self.delete_dialog(self.tiles[selected].item)
-                return
-        if key == Qt.Key.Key_Escape and self.isFullScreen():
-            self.showMaximized()
-            return
-        super().keyPressEvent(event)
 
 
 def main():

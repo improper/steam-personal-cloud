@@ -80,6 +80,14 @@ class GalleryTests(unittest.TestCase):
             self.assertEqual(items[0].source, 'recordings/clips/clip_220_20261009_193426')
             self.assertTrue(items[0].subtitle)
 
+    def test_screenshot_title_and_date_use_capture_filename(self):
+        with patch.object(gallery, 'steam_names', return_value={'13012119424931463168': 'Clone Hero'}):
+            name, subtitle, game_id = gallery.pretty_title(
+                'screenshots/13012119424931463168_20261007181713_1.png', 1)
+        self.assertEqual(name, 'Clone Hero')
+        self.assertEqual(game_id, '13012119424931463168')
+        self.assertIn('Oct 7, 2026', subtitle)
+
     def test_non_steam_shortcut_title_maps_full_game_id(self):
         import struct
         from agent import steam_game_names, capture_game_name
