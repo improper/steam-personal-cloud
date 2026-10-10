@@ -3,12 +3,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from functools import lru_cache
 from pathlib import Path
 import re
 import sqlite3
 
-from agent import discover, fingerprint
+from agent import discover, fingerprint, steam_game_names
 from local_status import local_snapshot, read_json
 
 SESSION_RE = re.compile(r'^(?:fg|bg|clip)_[A-Za-z0-9_-]+$', re.I)
@@ -83,38 +82,8 @@ def _game_and_datetime(source, modified):
     return game_id, dt
 
 
-@lru_cache(maxsize=1)
 def steam_names():
-    """Installed game labels from local Steam library appmanifest files."""
-    home = Path.home()
-    roots = [home / '.steam/debian-installation/steamapps',
-             home / '.local/share/Steam/steamapps',
-             home / '.steam/steam/steamapps']
-    for root in list(roots):
-        file = root / 'libraryfolders.vdf'
-        try:
-            data = file.read_text(errors='replace')
-        except OSError:
-            continue
-        for path in re.findall(r'"path"\s*"([^"]+)"', data):
-            extra = Path(path.replace('\\\\', '\\')) / 'steamapps'
-            if extra not in roots:
-                roots.append(extra)
-    names = {}
-    for root in roots:
-        try:
-            files = root.glob('appmanifest_*.acf')
-            for path in files:
-                m = APP_RE.match(path.name)
-                if not m:
-                    continue
-                content = path.read_text(errors='replace')
-                name = re.search(r'"name"\s*"([^"]+)"', content, re.I)
-                if name and name.group(1).strip():
-                    names[m.group(1)] = name.group(1).strip()
-        except OSError:
-            continue
-    return names
+    return steam_game_names()
 
 
 def pretty_title(source, modified):
@@ -257,7 +226,10 @@ def make_gallery(config_path=None, *, remote=True):
         timestamp = group['mtime'] or item.get('updated_at', 0)
         name, subtitle, game_id = pretty_title(key, timestamp)
         game_id = group.get('game_id') or game_id
-        name = item.get('game_name') or steam_names().get(game_id) or name
+        game_name = item.get('game_name') or steam_names().get(game_id)
+        if game_name:
+            media_label = 'Game Clip' if '/clips/' in key else 'Game Recording' if kind == 'video' else 'Screenshot'
+            name = f'{game_name} {media_label}'
         thumbnail = find_steam_thumbnail(group['path']) if kind == 'video' else group['path']
         result.append(MediaItem(key=key, name=name, kind=kind, state=state,
                                 local_path=group['path'], immich_id=immich_id, source=key,

@@ -13,6 +13,7 @@ from functools import lru_cache
 from pathlib import Path
 import sqlite3
 import ssl
+import struct
 import tempfile
 import time
 from urllib.parse import quote, urlsplit
@@ -49,6 +50,19 @@ def steam_game_names():
                     result[match.group(1)] = name.group(1).strip()
         except OSError:
             pass
+    # Non-Steam games use a 64-bit game ID derived from their shortcut app ID.
+    for root in roots[:3]:
+        for file in (root.parent / 'userdata').glob('*/config/shortcuts.vdf'):
+            try:
+                data = file.read_bytes()
+            except OSError:
+                continue
+            for match in re.finditer(rb'\x02appid\x00(.{4})\x01appname\x00([^\x00]+)', data, re.S):
+                app_id = struct.unpack('<I', match.group(1))[0]
+                name = match.group(2).decode('utf-8', errors='replace').strip()
+                if name:
+                    result[str(app_id)] = name
+                    result[str((app_id << 32) | 0x02000000)] = name
     return result
 
 

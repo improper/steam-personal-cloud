@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 from PyQt6.QtCore import QObject, QRunnable, QSize, Qt, QThread, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QImageReader, QPixmap, QFont
 from PyQt6.QtWidgets import (QApplication, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
-    QMainWindow, QMessageBox, QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget, QStackedWidget)
+    QMainWindow, QMessageBox, QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget, QStackedWidget, QProgressBar)
 from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 
@@ -106,11 +106,14 @@ class Tile(QWidget):
         self.button.setMinimumSize(226, 168)
         self.button.setIconSize(QSize(220, 144))
         self.button.clicked.connect(lambda: on_open(self.item))
-        self.button.setAccessibleName(item.name + ', ' + BADGES.get(item.state, BADGES['waiting'])[0])
+        self.button.setAccessibleName(item.name + ', ' + item.kind + ', ' + BADGES.get(item.state, BADGES['waiting'])[0])
         layout.addWidget(self.button)
-        title = QLabel(item.name[:48])
+        media_type = QLabel('▶  VIDEO' if item.kind == 'video' else '▣  PHOTO')
+        media_type.setObjectName('eyebrow')
+        layout.addWidget(media_type)
+        title = QLabel(item.name)
         title.setObjectName('tileName')
-        title.setWordWrap(False)
+        title.setWordWrap(True)
         layout.addWidget(title)
         if item.subtitle:
             when = QLabel(item.subtitle)
@@ -125,7 +128,10 @@ class Tile(QWidget):
 
     def set_preview(self, pix):
         if not pix.isNull():
-            self.button.setIcon(QIcon(pix))
+            cover = pix.scaled(QSize(220, 144), Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                               Qt.TransformationMode.SmoothTransformation)
+            cover = cover.copy((cover.width() - 220) // 2, (cover.height() - 144) // 2, 220, 144)
+            self.button.setIcon(QIcon(cover))
             self.button.setText('')
 
 
@@ -154,6 +160,10 @@ class Viewer(QWidget):
         self.notice = QLabel(BADGES.get(item.state, BADGES['waiting'])[0])
         self.notice.setObjectName('detail')
         self.notice.setWordWrap(True)
+        self.buffering = QProgressBar()
+        self.buffering.setRange(0, 0)
+        self.buffering.setFixedHeight(8)
+        self.buffering.hide()
         if item.kind == 'photo':
             self.photo = QLabel()
             self.photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -207,6 +217,9 @@ class Viewer(QWidget):
             outer.addLayout(controls)
             self.player.playbackStateChanged.connect(self.update_play_button)
             self.player.errorOccurred.connect(self.playback_error)
+            self.player.mediaStatusChanged.connect(self.media_status)
+            self.notice.setText('Loading video from Immich…')
+            self.buffering.show()
             self.player.setSource(QUrl(media_url(item, 'video')) if item.immich_id and item.state == 'ready'
                                   else QUrl.fromLocalFile(item.local_path))
             QTimer.singleShot(0, self.player.play)
@@ -216,6 +229,7 @@ class Viewer(QWidget):
             message.setObjectName('subtitle')
             message.setAlignment(Qt.AlignmentFlag.AlignCenter)
             outer.addWidget(message, 1)
+        outer.addWidget(self.buffering)
         outer.addWidget(self.notice)
         bottom = QHBoxLayout()
         more = QPushButton('More actions  ·  Remove…')
@@ -225,7 +239,21 @@ class Viewer(QWidget):
         outer.addLayout(bottom)
 
     def playback_error(self, error, message):
-        self.notice.setText('Video cannot play yet: ' + (message or 'Immich may still be transcoding. Check Details for sync errors.'))
+        self.buffering.hide()
+        self.notice.setText('Unable to stream video from Immich: ' + (message or 'Immich may still be transcoding. Check Details for sync errors.'))
+
+    def media_status(self, status):
+        loading = status in (QMediaPlayer.MediaStatus.LoadingMedia,
+                             QMediaPlayer.MediaStatus.BufferingMedia,
+                             QMediaPlayer.MediaStatus.StalledMedia)
+        self.buffering.setVisible(loading)
+        if loading:
+            self.notice.setText('Loading video from Immich…' if status == QMediaPlayer.MediaStatus.LoadingMedia
+                                else 'Buffering video from Immich…')
+        elif status in (QMediaPlayer.MediaStatus.LoadedMedia, QMediaPlayer.MediaStatus.BufferedMedia):
+            self.notice.setText('Streaming from Immich')
+        elif status == QMediaPlayer.MediaStatus.EndOfMedia:
+            self.notice.setText('Playback finished')
 
     def update_play_button(self, state):
         if self.player:
@@ -372,7 +400,7 @@ class Gallery(QMainWindow):
         if snap.get('error') or rem.get('error') or result.get('last_error'):
             details.append('Attention: ' + str(snap.get('error') or rem.get('error') or result.get('last_error')))
         self.advanced.setText('\n'.join(details))
-        signature = tuple((x.key, x.state, x.immich_id, x.local_path) for x in items if self.filter == 'all' or x.kind == self.filter)
+        signature = tuple((x.key, x.state, x.immich_id, x.local_path, x.name, x.subtitle, x.thumbnail) for x in items if self.filter == 'all' or x.kind == self.filter)
         if signature != getattr(self, 'signature', None):
             self.signature = signature
             self.render()

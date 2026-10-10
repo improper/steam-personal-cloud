@@ -75,10 +75,29 @@ class GalleryTests(unittest.TestCase):
             with patch.object(gallery, 'local_snapshot', return_value=snap):
                 items, _ = gallery.make_gallery(config)
             self.assertEqual(len(items), 1)
-            self.assertEqual(items[0].name, 'Test Game')
+            self.assertEqual(items[0].name, 'Test Game Game Clip')
             self.assertEqual(items[0].state, 'ready')
             self.assertEqual(items[0].source, 'recordings/clips/clip_220_20261009_193426')
             self.assertTrue(items[0].subtitle)
+
+    def test_non_steam_shortcut_title_maps_full_game_id(self):
+        import struct
+        from agent import steam_game_names, capture_game_name
+        with TemporaryDirectory() as directory:
+            home = Path(directory)
+            config = home / '.steam/debian-installation/userdata/123/config'
+            config.mkdir(parents=True)
+            (config / 'shortcuts.vdf').write_bytes(
+                b'\x00shortcuts\x00\x000\x00\x02appid\x00' + struct.pack('<I', 3029620141) +
+                b'\x01appname\x00Clone Hero\x00\x08\x08')
+            steam_game_names.cache_clear()
+            try:
+                with patch('agent.Path.home', return_value=home):
+                    self.assertEqual(capture_game_name(
+                        'recordings/video/fg_13012119424931463168_20261009_183855/session.mpd'),
+                        'Clone Hero')
+            finally:
+                steam_game_names.cache_clear()
 
     def test_generic_recordings_are_not_phantom_videos(self):
         self.assertIsNone(gallery.canonical_recording('recordings/gamerecording.pb'))
