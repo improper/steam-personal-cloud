@@ -14,7 +14,8 @@ from local_status import local_snapshot, read_json
 SESSION_RE = re.compile(r'^(?:fg|bg|clip)_[A-Za-z0-9_-]+$', re.I)
 GAME_RE = re.compile(r'(?:^|[/_])(?:fg|bg)_(\d+)_(\d{8})_(\d{6})(?:$|/)', re.I)
 DATE_RE = re.compile(r'(20\d{6})[_-](\d{6})')
-APP_RE = re.compile(r'appmanifest_(\d+)\.acf
+APP_RE = re.compile(r'appmanifest_(\d+)\.acf$')
+SESSION_ID_RE = re.compile(r'(?:fg|bg)_\d+_20\d{6}_\d{6}')
 
 
 @dataclass(frozen=True)
