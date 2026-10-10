@@ -139,7 +139,34 @@ def find_steam_thumbnail(path):
         result = folder / name
         if result.is_file() and not result.is_symlink():
             return str(result)
+    # Steam sometimes stores a thumbnail alongside a nested video session.
+    for subdir in ('thumbnails', 'thumbs', 'video'):
+        nested = folder / subdir
+        if not nested.is_dir():
+            continue
+        for name in candidates:
+            result = nested / name
+            if result.is_file() and not result.is_symlink():
+                return str(result)
     return ''
+
+
+def canonical_source(relative):
+    if relative.startswith('screenshots/'):
+        return relative
+    if not relative.startswith('recordings/'):
+        return None
+    # Server media keys are directories, local discovered paths are files.
+    candidate = relative if '.' in Path(relative).name else relative + '/session.mpd'
+    return canonical_recording(candidate)
+
+
+def can_play_immich(item):
+    return bool(item.immich_id and item.state == 'ready')
+
+
+def is_steam_thumbnail(path):
+    return bool(path and Path(path).is_file())
 
 
 def make_gallery(config_path=None, *, remote=True):
@@ -156,7 +183,7 @@ def make_gallery(config_path=None, *, remote=True):
         if not source.startswith(prefix):
             continue
         relative = source[len(prefix):]
-        key = relative if relative.startswith('screenshots/') else canonical_recording(relative + '/session.mpd') if relative.count('/') == 1 else canonical_recording(relative)
+        key = canonical_source(relative)
         if not key:
             continue
         prior = remote_items.get(key)
@@ -178,10 +205,13 @@ def make_gallery(config_path=None, *, remote=True):
         key = rel if is_photo else canonical_recording(rel)
         if not key:
             continue
-        group = groups.setdefault(key, {'path': '', 'mtime': 0, 'files': 0, 'sent': 0, 'manifest': False, 'mp4': False})
+        group = groups.setdefault(key, {'path': '', 'mtime': 0, 'files': 0, 'sent': 0, 'manifest': False, 'mp4': False, 'game_id': ''})
         group['files'] += 1
         group['sent'] += int(sent.get(rel) == fingerprint(path, stat))
         group['mtime'] = max(group['mtime'], stat.st_mtime)
+        detected_game, _ = _game_and_datetime(rel, stat.st_mtime)
+        if detected_game and not group['game_id']:
+            group['game_id'] = detected_game
         if is_photo:
             group['path'] = str(path)
         elif rel.lower().endswith('.mp4') and key == rel:
@@ -194,7 +224,7 @@ def make_gallery(config_path=None, *, remote=True):
             if rel.lower().endswith('/session.mpd'):
                 group['manifest'] = True
     for key, item in remote_items.items():
-        groups.setdefault(key, {'path': '', 'mtime': item.get('updated_at', 0), 'files': 0, 'sent': 0, 'manifest': True, 'mp4': False})
+        groups.setdefault(key, {'path': '', 'mtime': item.get('updated_at', 0), 'files': 0, 'sent': 0, 'manifest': True, 'mp4': False, 'game_id': ''})
     result = []
     seen_assets = set()
     for key, group in groups.items():
@@ -216,6 +246,8 @@ def make_gallery(config_path=None, *, remote=True):
         kind = 'photo' if key.startswith('screenshots/') else 'video'
         timestamp = group['mtime'] or item.get('updated_at', 0)
         name, subtitle, game_id = pretty_title(key, timestamp)
+        game_id = group.get('game_id') or game_id
+        name = item.get('game_name') or steam_names().get(game_id) or name
         thumbnail = find_steam_thumbnail(group['path']) if kind == 'video' else group['path']
         result.append(MediaItem(key=key, name=name, kind=kind, state=state,
                                 local_path=group['path'], immich_id=immich_id, source=key,
