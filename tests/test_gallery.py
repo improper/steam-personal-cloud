@@ -87,6 +87,35 @@ class GalleryTests(unittest.TestCase):
             'recordings/clips/clip_220_20261009_193426/video/fg_220_20261009_193426/session.mpd'),
             'recordings/clips/clip_220_20261009_193426')
 
+    def test_saved_clip_supersedes_same_original_recording(self):
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            shots, videos = base/'shots', base/'videos'
+            shots.mkdir(); videos.mkdir()
+            original = videos/'video'/'fg_220_20261009_193426'
+            clip = videos/'clips'/'clip_220_20261009_194000'/'video'/'fg_220_20261009_193426'
+            for folder in (original, clip):
+                folder.mkdir(parents=True)
+                (folder/'session.mpd').write_text('<MPD />')
+                (folder/'chunk.m4s').write_bytes(b'm4s')
+            conf = base/'client.json'
+            conf.write_text(json.dumps({
+                'client_id':'box','steam_account':'user',
+                'screenshots':str(shots),'recordings':str(videos),
+                'state_dir':str(base/'state'),'settle_seconds':0}))
+            rows = [
+                {'source':'box/user/recordings/video/fg_220_20261009_193426',
+                 'status':'complete','immich_id':'11111111-1111-1111-1111-111111111111'},
+                {'source':'box/user/recordings/clips/clip_220_20261009_194000/video/fg_220_20261009_193426',
+                 'status':'complete','immich_id':'22222222-2222-2222-2222-222222222222'},
+            ]
+            snap = {'configured':True,'local':{},'remote':{'connected':True,'items':rows}}
+            with patch.object(gallery,'local_snapshot',return_value=snap):
+                items,_ = gallery.make_gallery(conf)
+            self.assertEqual(len(items),1)
+            self.assertIn('/clips/',items[0].key)
+            self.assertEqual(items[0].immich_id,'22222222-2222-2222-2222-222222222222')
+
     def test_trash_preserves_capture_and_writes_recovery_metadata(self):
         with TemporaryDirectory() as directory:
             home = Path(directory)/'home'
