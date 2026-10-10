@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 from PyQt6.QtCore import QObject, QRunnable, QSize, Qt, QThread, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QImageReader, QPixmap, QFont
 from PyQt6.QtWidgets import (QApplication, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
-    QMainWindow, QMessageBox, QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget)
+    QMainWindow, QMessageBox, QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget, QStackedWidget)
 from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 
@@ -43,9 +43,9 @@ QSlider::handle:horizontal { background: #89d6ff; width: 20px; margin: -7px 0; b
 '''
 BADGES = {
     'waiting': ('● Waiting to back up', '#e9ae63'),
-    'backed_up': ('✓ Backed up', '#80bcff'),
+    'backed_up': ('◔ Preparing for Immich', '#80bcff'),
     'processing': ('◔ Processing', '#c7a9ff'),
-    'ready': ('✓ In Immich', '#82ddb4'),
+    'ready': ('✓ Available in Immich', '#82ddb4'),
     'error': ('! Needs attention', '#ff8b9a'),
     'deleted': ('○ Removed from Immich', '#adb4c1'),
 }
@@ -108,16 +108,20 @@ class Tile(QWidget):
         self.button.clicked.connect(lambda: on_open(self.item))
         self.button.setAccessibleName(item.name + ', ' + BADGES.get(item.state, BADGES['waiting'])[0])
         layout.addWidget(self.button)
-        title = QLabel(item.name.replace('_', ' ')[:36])
+        title = QLabel(item.name[:48])
         title.setObjectName('tileName')
         title.setWordWrap(False)
         layout.addWidget(title)
+        if item.subtitle:
+            when = QLabel(item.subtitle)
+            when.setObjectName('detail')
+            layout.addWidget(when)
         label, color = BADGES.get(item.state, BADGES['waiting'])
         status = QLabel(label)
         status.setStyleSheet(f'color:{color}; background:transparent; font-size:16px; font-weight:700;')
         layout.addWidget(status)
-        if item.kind == 'photo' and item.local_path:
-            self.set_preview(local_image(item.local_path))
+        if item.thumbnail:
+            self.set_preview(local_image(item.thumbnail))
 
     def set_preview(self, pix):
         if not pix.isNull():
@@ -125,70 +129,118 @@ class Tile(QWidget):
             self.button.setText('')
 
 
-class Viewer(QDialog):
-    def __init__(self, item, on_delete, parent):
+class Viewer(QWidget):
+    """Inline media player: gallery stays inside ONE Xubuntu/Steam window."""
+    def __init__(self, item, on_close, on_delete, parent=None):
         super().__init__(parent)
         self.item = item
-        self.setWindowTitle(item.name)
-        self.resize(1200, 800)
-        outer = QVBoxLayout(self)
-        top = QHBoxLayout()
-        heading = QLabel(item.name.replace('_', ' '))
-        heading.setObjectName('headline')
-        top.addWidget(heading, 1)
-        close = QPushButton('Back  Esc')
-        close.clicked.connect(self.accept)
-        top.addWidget(close)
-        outer.addLayout(top)
         self.player = None
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(28, 16, 28, 20)
+        outer.setSpacing(14)
+        top = QHBoxLayout()
+        headings = QVBoxLayout()
+        title = QLabel(item.name)
+        title.setObjectName('headline')
+        headings.addWidget(title)
+        subtitle = QLabel(item.subtitle or 'Your capture')
+        subtitle.setObjectName('subtitle')
+        headings.addWidget(subtitle)
+        top.addLayout(headings, 1)
+        back = QPushButton('←  Back to gallery')
+        back.clicked.connect(on_close)
+        top.addWidget(back)
+        outer.addLayout(top)
+        self.notice = QLabel(BADGES.get(item.state, BADGES['waiting'])[0])
+        self.notice.setObjectName('detail')
+        self.notice.setWordWrap(True)
         if item.kind == 'photo':
             self.photo = QLabel()
             self.photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.photo.setMinimumHeight(450)
-            self.pix = local_image(item.local_path, QSize(2000, 1400)) if item.local_path else QPixmap()
-            if self.pix.isNull() and item.immich_id and item.state == 'ready':
+            self.photo.setMinimumHeight(350)
+            self.pix = local_image(item.local_path, QSize(2200, 1400)) if item.local_path else QPixmap()
+            if item.immich_id and item.state == 'ready':
                 try:
-                    with urlopen(media_url(item, 'preview'), timeout=10) as response:
+                    with urlopen(media_url(item, 'preview'), timeout=7) as response:
                         data = response.read(16 * 1024 * 1024)
-                    self.pix.loadFromData(data)
+                    immich_pix = QPixmap()
+                    if immich_pix.loadFromData(data):
+                        self.pix = immich_pix
                 except (OSError, TimeoutError):
                     pass
             if self.pix.isNull():
-                self.photo.setText('Preview not yet available')
+                self.photo.setText('Preview is not available yet')
             else:
-                self.photo.setPixmap(self.pix.scaled(QSize(1050, 650), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+                self.photo.setPixmap(self.pix.scaled(QSize(1550, 720),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation))
             outer.addWidget(self.photo, 1)
         elif (item.immich_id and item.state == 'ready') or (item.local_path and item.local_path.lower().endswith('.mp4')):
-            self.video = QVideoWidget()
-            self.video.setMinimumHeight(420)
+            self.video = QVideoWidget(self)
+            self.video.setMinimumHeight(340)
             outer.addWidget(self.video, 1)
             self.player = QMediaPlayer(self)
             self.audio = QAudioOutput(self)
+            self.audio.setVolume(.8)
             self.player.setAudioOutput(self.audio)
             self.player.setVideoOutput(self.video)
-            self.player.setSource(QUrl(media_url(item, 'video')) if item.immich_id and item.state == 'ready' else QUrl.fromLocalFile(item.local_path))
-            self.player.errorOccurred.connect(lambda _e, msg: self.notice.setText('Playback unavailable: ' + msg))
             self.seek = QSlider(Qt.Orientation.Horizontal)
             self.seek.setRange(0, 0)
-            self.player.durationChanged.connect(lambda n: self.seek.setMaximum(max(0, n)))
-            self.player.positionChanged.connect(self.seek.setValue)
+            self.player.durationChanged.connect(lambda value: self.seek.setMaximum(max(0, value)))
+            self.player.positionChanged.connect(self.update_position)
             self.seek.sliderMoved.connect(self.player.setPosition)
             outer.addWidget(self.seek)
-            play = QPushButton('Pause / Resume  Space')
-            play.clicked.connect(self.toggle_play)
-            outer.addWidget(play)
-            self.player.play()
+            controls = QHBoxLayout()
+            rewind = QPushButton('−10s')
+            rewind.clicked.connect(lambda: self.skip(-10000))
+            controls.addWidget(rewind)
+            self.play_button = QPushButton('Pause  ⏸')
+            self.play_button.clicked.connect(self.toggle_play)
+            controls.addWidget(self.play_button)
+            forward = QPushButton('+10s')
+            forward.clicked.connect(lambda: self.skip(10000))
+            controls.addWidget(forward)
+            self.position_label = QLabel('0:00 / 0:00')
+            self.position_label.setObjectName('detail')
+            controls.addWidget(self.position_label)
+            controls.addStretch(1)
+            outer.addLayout(controls)
+            self.player.playbackStateChanged.connect(self.update_play_button)
+            self.player.errorOccurred.connect(self.playback_error)
+            self.player.setSource(QUrl(media_url(item, 'video')) if item.immich_id and item.state == 'ready'
+                                  else QUrl.fromLocalFile(item.local_path))
+            QTimer.singleShot(0, self.player.play)
         else:
-            message = QLabel('Video processing in progress.\nPlayback becomes available after Immich accepts the recording.')
+            message = QLabel('Waiting for Immich to prepare this recording.\nIt will become playable when video processing finishes.')
             message.setObjectName('subtitle')
             message.setAlignment(Qt.AlignmentFlag.AlignCenter)
             outer.addWidget(message, 1)
-        self.notice = QLabel(BADGES.get(item.state, BADGES['waiting'])[0])
-        self.notice.setObjectName('detail')
         outer.addWidget(self.notice)
-        delete = QPushButton('More actions · Delete…')
-        delete.clicked.connect(lambda: on_delete(item, self))
-        outer.addWidget(delete)
+        bottom = QHBoxLayout()
+        more = QPushButton('More actions  ·  Remove…')
+        more.clicked.connect(lambda: on_delete(item))
+        bottom.addWidget(more)
+        bottom.addStretch(1)
+        outer.addLayout(bottom)
+
+    def playback_error(self, error, message):
+        self.notice.setText('Video cannot play yet: ' + (message or 'Immich may still be transcoding. Check Details for sync errors.'))
+
+    def update_play_button(self, state):
+        if self.player:
+            self.play_button.setText('Pause  ⏸' if state == QMediaPlayer.PlaybackState.PlayingState else 'Play  ▶')
+
+    def update_position(self, position):
+        if self.player:
+            self.seek.blockSignals(True)
+            self.seek.setValue(position)
+            self.seek.blockSignals(False)
+            fmt = lambda n: f'{n // 60000}:{(n // 1000) % 60:02d}'
+            self.position_label.setText(fmt(position) + ' / ' + fmt(self.player.duration()))
+
+    def skip(self, millis):
+        if self.player:
+            self.player.setPosition(max(0, min(self.player.duration(), self.player.position() + millis)))
 
     def toggle_play(self):
         if self.player:
@@ -197,16 +249,10 @@ class Viewer(QDialog):
             else:
                 self.player.play()
 
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Space:
-            self.toggle_play()
-        else:
-            super().keyPressEvent(event)
-
-    def closeEvent(self, event):
+    def shutdown(self):
         if self.player:
             self.player.stop()
-        super().closeEvent(event)
+            self.player.setSource(QUrl())
 
 
 class Gallery(QMainWindow):
@@ -225,7 +271,11 @@ class Gallery(QMainWindow):
         self.viewing = False
         self.filter = 'all'
         root = QWidget()
-        self.setCentralWidget(root)
+        self.stack = QStackedWidget()
+        self.setCentralWidget(self.stack)
+        self.stack.addWidget(root)
+        self.gallery_page = root
+        self.viewer = None
         self.layout = QVBoxLayout(root)
         self.layout.setContentsMargins(38, 22, 38, 24)
         self.layout.setSpacing(16)
@@ -309,10 +359,14 @@ class Gallery(QMainWindow):
         rem = snap.get('remote', {})
         counts = rem.get('counts', {})
         media_ready = counts.get('complete', 0)
-        self.summary.setText(f"◉ {len(items)} memories     ·     ◔ {loc.get('pending', 0)} files waiting     ·     ✓ {loc.get('sent', 0)} backed-up files     ·     ✦ {media_ready} in Immich")
+        ready = sum(x.state == 'ready' for x in items)
+        waiting = sum(x.state == 'waiting' for x in items)
+        preparing = sum(x.state in ('backed_up', 'processing') for x in items)
+        self.summary.setText(f"◉ {len(items)} captures     ·     ✦ {ready} in Immich     ·     ◔ {preparing} preparing     ·     ● {waiting} waiting")
         result = snap.get('last_sync', {})
         details = [f"Server: {snap.get('server', 'Not configured')}  ({'Connected' if rem.get('connected') else 'Offline'})",
                    f"Capture folders: {snap.get('paths', {}).get('screenshots', '')}  |  {snap.get('paths', {}).get('recordings', '')}",
+                   f"Server received: {loc.get('sent', 0)} files · Immich processed: {media_ready} assets",
                    f"Last sync: {result.get('finished_at', 'No completed sync')} · Uploaded: {result.get('uploaded', 0)}, Failed: {result.get('failed', 0)}"]
         if snap.get('error') or rem.get('error') or result.get('last_error'):
             details.append('Attention: ' + str(snap.get('error') or rem.get('error') or result.get('last_error')))
@@ -335,9 +389,9 @@ class Gallery(QMainWindow):
             tile = Tile(item, self.open_item)
             self.grid.addWidget(tile, i // max_columns, i % max_columns)
             self.tiles[item.key] = tile
-            if item.kind == 'photo' and not item.local_path and item.immich_id and item.state == 'ready':
-                self.pool.start(ImageTask(item.key, media_url(item, 'thumb'), self.signals))
-            elif item.kind == 'video' and item.immich_id and item.state == 'ready':
+            # Prefer Immich's canonical thumbnail; local Steam art remains visible
+            # immediately and survives an offline/processing thumbnail response.
+            if item.immich_id and item.state == 'ready':
                 self.pool.start(ImageTask(item.key, media_url(item, 'thumb'), self.signals))
         if not shown:
             empty = QLabel('No captures yet\nTake a Steam screenshot or save a gameplay recording to get started.')
@@ -362,8 +416,17 @@ class Gallery(QMainWindow):
 
     def open_item(self, item):
         self.viewing = True
-        dialog = Viewer(item, self.delete_dialog, self)
-        dialog.exec()
+        self.viewer = Viewer(item, self.close_viewer, self.delete_dialog, self)
+        self.stack.addWidget(self.viewer)
+        self.stack.setCurrentWidget(self.viewer)
+
+    def close_viewer(self):
+        if self.viewer:
+            self.viewer.shutdown()
+            self.stack.setCurrentWidget(self.gallery_page)
+            self.stack.removeWidget(self.viewer)
+            self.viewer.deleteLater()
+            self.viewer = None
         self.viewing = False
         self.refresh()
 
