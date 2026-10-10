@@ -159,8 +159,9 @@ def upsert_file(db, client, account, rel, sha, size, mtime, timestamp, game_name
             db.execute("UPDATE media SET game_name=? WHERE key=? AND game_name=''",
                        (game_name, full))
             if rel.startswith('recordings/'):
-                db.execute("UPDATE media SET game_name=? WHERE key LIKE ? AND game_name=''",
-                           (game_name, f"{client}/{account}/recordings/%"))
+                parent_key = f"{client}/{account}/{rel.rsplit('/', 1)[0]}"
+                db.execute("UPDATE media SET game_name=? WHERE key=? AND game_name=''",
+                           (game_name, parent_key))
         return False
     db.execute('''INSERT INTO files(path,client,account,sha,size,original_mtime,received_at,game_name)
         VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET
