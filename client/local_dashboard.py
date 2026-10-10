@@ -46,6 +46,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_HEAD(self):
+        if self.headers.get('Host', '').split(':')[0] not in ('127.0.0.1', 'localhost'):
+            self.send_error(403)
+            return
         match = MEDIA.fullmatch(self.path)
         if match:
             self.media(match, head_only=True)
@@ -60,16 +63,28 @@ class Handler(BaseHTTPRequestHandler):
         url = config['server'].rstrip('/') + '/api/media/' + match.group(1) + '/' + match.group(2)
         headers = {'X-SPC-Token': config['token']}
         if match.group(2) == 'video' and head_only:
+            # GET a single byte as upstream does not implement HEAD for this route.
             headers['Range'] = 'bytes=0-0'
         elif self.headers.get('Range') and match.group(2) == 'video':
             headers['Range'] = self.headers['Range']
         req = Request(url, headers=headers)
         try:
             with urlopen(req, timeout=30) as upstream:
-                self.send_response(upstream.status)
-                for key in ('Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges'):
-                    if upstream.headers.get(key):
-                        self.send_header(key, upstream.headers[key])
+                # Qt Multimedia probes with HEAD; return total video length, not
+                # the one-byte 206 range response used for the upstream probe.
+                if head_only and match.group(2) == 'video':
+                    content_range = upstream.headers.get('Content-Range', '')
+                    total = content_range.rsplit('/', 1)[-1] if '/' in content_range else ''
+                    self.send_response(200)
+                    self.send_header('Accept-Ranges', 'bytes')
+                    if total.isdecimal():
+                        self.send_header('Content-Length', total)
+                    self.send_header('Content-Type', upstream.headers.get('Content-Type', 'video/mp4'))
+                else:
+                    self.send_response(upstream.status)
+                    for key in ('Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges'):
+                        if upstream.headers.get(key):
+                            self.send_header(key, upstream.headers[key])
                 self.send_header('Cache-Control', 'private, no-store')
                 self.send_header('X-Content-Type-Options', 'nosniff')
                 self.end_headers()
