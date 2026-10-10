@@ -47,7 +47,7 @@ def db_open():
     db.execute('''CREATE TABLE IF NOT EXISTS files (
         path TEXT PRIMARY KEY, client TEXT NOT NULL, account TEXT NOT NULL,
         sha TEXT NOT NULL, size INTEGER NOT NULL, original_mtime REAL NOT NULL,
-        received_at REAL NOT NULL)''')
+        received_at REAL NOT NULL, game_name TEXT NOT NULL DEFAULT '')''')
     db.execute('''CREATE TABLE IF NOT EXISTS devices (
         token_hash TEXT PRIMARY KEY, client TEXT NOT NULL, account TEXT NOT NULL,
         created_at REAL NOT NULL, last_seen REAL NOT NULL, revoked_at REAL)''')
@@ -58,7 +58,12 @@ def db_open():
         source TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL,
         fingerprint TEXT NOT NULL DEFAULT '', immich_id TEXT,
         error TEXT NOT NULL DEFAULT '', updated_at REAL NOT NULL,
-        retry_at REAL NOT NULL DEFAULT 0)''')
+        retry_at REAL NOT NULL DEFAULT 0,
+        game_name TEXT NOT NULL DEFAULT '')''')
+    for table in ('files', 'media'):
+        columns = {row['name'] for row in db.execute(f'PRAGMA table_info({table})')}
+        if 'game_name' not in columns:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN game_name TEXT NOT NULL DEFAULT ''")
     db.commit()
     return db
 
@@ -114,7 +119,7 @@ def valid_path(client: str, account: str, rel: str):
     return f'{client}/{account}/{rel}'
 
 
-def register_media(db, client, account, rel, now):
+def register_media(db, client, account, rel, now, game_name=''):
     if rel.startswith('screenshots/'):
         kind = 'screenshot'
         source = f'{client}/{account}/{rel}'
@@ -125,11 +130,12 @@ def register_media(db, client, account, rel, now):
         key = source
     else:
         return
-    db.execute('''INSERT INTO media(key,client,account,source,kind,status,updated_at)
-        VALUES(?,?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET
+    db.execute('''INSERT INTO media(key,client,account,source,kind,status,updated_at,game_name)
+        VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET
         status=CASE WHEN media.status IN ('complete','deleted') THEN media.status ELSE 'queued' END,
+        game_name=CASE WHEN excluded.game_name!='' THEN excluded.game_name ELSE media.game_name END,
         updated_at=excluded.updated_at''',
-        (key, client, account, source, kind, 'queued', now))
+        (key, client, account, source, kind, 'queued', now, game_name))
 
 
 def ensure_recording_index(db, client, account, rel, now):
@@ -143,17 +149,25 @@ def ensure_recording_index(db, client, account, rel, now):
                "WHERE key=? AND status='complete'", (now, key))
 
 
-def upsert_file(db, client, account, rel, sha, size, mtime, timestamp):
+def upsert_file(db, client, account, rel, sha, size, mtime, timestamp, game_name=''):
     full = f'{client}/{account}/{rel}'
     prior = db.execute('SELECT sha FROM files WHERE path=?', (full,)).fetchone()
     # Refresh last-seen only when CONTENT changes; identical retries are idempotent.
     if prior is not None and prior['sha'] == sha:
+        # Still enrich metadata from clients upgraded after initial backup.
+        if game_name:
+            db.execute("UPDATE media SET game_name=? WHERE key=? AND game_name=''",
+                       (game_name, full))
+            if rel.startswith('recordings/'):
+                db.execute("UPDATE media SET game_name=? WHERE key LIKE ? AND game_name=''",
+                           (game_name, f"{client}/{account}/recordings/%"))
         return False
-    db.execute('''INSERT INTO files(path,client,account,sha,size,original_mtime,received_at)
-        VALUES (?,?,?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET
+    db.execute('''INSERT INTO files(path,client,account,sha,size,original_mtime,received_at,game_name)
+        VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET
         sha=excluded.sha,size=excluded.size,original_mtime=excluded.original_mtime,
-        received_at=excluded.received_at''', (full, client, account, sha, size, mtime, timestamp))
-    register_media(db, client, account, rel, timestamp)
+        received_at=excluded.received_at,game_name=excluded.game_name''',
+        (full, client, account, sha, size, mtime, timestamp, game_name))
+    register_media(db, client, account, rel, timestamp, game_name)
     ensure_recording_index(db, client, account, rel, timestamp)
     if rel.startswith('screenshots/'):
         db.execute("UPDATE media SET status='queued', retry_at=0 WHERE key=? AND status!='deleted'", (full,))
@@ -189,7 +203,7 @@ def game_id(source: str):
     return match[1] if match else None
 
 
-def tag_asset(asset_id: str, client: str, account: str, kind: str, source: str, capture: datetime):
+def tag_asset(asset_id: str, client: str, account: str, kind: str, source: str, capture: datetime, game_name=''):
     """Create tags from path segments using parentId; Immich tag names may not contain '/'."""
     paths = [('Steam',), ('Steam', 'Account', account), ('Steam', 'Client', client),
              ('Steam', 'Media', 'Screenshot' if kind == 'screenshot' else 'Video'),
@@ -197,6 +211,8 @@ def tag_asset(asset_id: str, client: str, account: str, kind: str, source: str, 
     game = game_id(source)
     if game:
         paths.append(('Steam', 'Game', game))
+    if game_name:
+        paths.append(('Steam', 'Game title', game_name.replace('/', ' ').strip()[:90]))
     known = {tag['value']: tag['id'] for tag in immich_request('GET', '/tags')}
     ids = set()
     for parts in paths:
@@ -212,7 +228,7 @@ def tag_asset(asset_id: str, client: str, account: str, kind: str, source: str, 
         immich_request('PUT', f'/tags/{tag_id}/assets', json={'ids': [asset_id]})
 
 
-def upload_asset(file: Path, source: str, client: str, account: str, kind: str, capture: datetime, fingerprint: str):
+def upload_asset(file: Path, source: str, client: str, account: str, kind: str, capture: datetime, fingerprint: str, game_name=''):
     when = capture.isoformat(timespec='seconds')
     modified = datetime.fromtimestamp(file.stat().st_mtime, timezone.utc).isoformat(timespec='seconds')
     # Device asset id stays deterministic across retries and process restarts.
@@ -231,7 +247,14 @@ def upload_asset(file: Path, source: str, client: str, account: str, kind: str, 
     if not album:
         album = immich_request('POST', '/albums', json={'albumName': ALBUM})
     immich_request('PUT', f"/albums/{album['id']}/assets", json={'ids': [asset_id]})
-    tag_asset(asset_id, client, account, kind, source, capture)
+    tag_asset(asset_id, client, account, kind, source, capture, game_name)
+    if game_name:
+        try:
+            # Optional: asset.update permission must not gate archiving itself.
+            immich_request('PUT', f'/assets/{asset_id}', json={
+                'description': f"{game_name} · {capture.strftime('%b %d, %Y at %H:%M UTC')} · Steam {kind}"})
+        except requests.RequestException as exc:
+            print(f'Immich game-title description skipped: {exc}', flush=True)
     return asset_id
 
 
@@ -292,7 +315,7 @@ def processing_once():
                     input_path = tmp_output
                 set_status(db, key, 'uploading')
                 asset_id = upload_asset(input_path, item['source'], item['client'],
-                                        item['account'], item['kind'], capture, fp)
+                                        item['account'], item['kind'], capture, fp, item.get('game_name', ''))
                 set_status(db, key, 'complete', fingerprint=fp, asset_id=asset_id)
             except Exception as exc:
                 set_status(db, key, 'error', error=str(exc), retry=time.time() + 120)
@@ -333,8 +356,12 @@ def health():
 async def receive(client: str, account: str, rel: str, request: Request,
                   x_spc_token: Optional[str] = Header(default=None),
                   x_spc_sha256: Optional[str] = Header(default=None),
-                  x_spc_modified: Optional[str] = Header(default=None)):
+                  x_spc_modified: Optional[str] = Header(default=None),
+                  x_spc_game_name: Optional[str] = Header(default=None)):
     authorize(x_spc_token, client, account)
+    game_name = (x_spc_game_name or '').strip()
+    if len(game_name) > 100 or any(ord(c) < 32 or ord(c) == 127 for c in game_name):
+        raise HTTPException(400, 'Invalid game name')
     identifier = valid_path(client, account, rel)
     if not x_spc_sha256 or not re.fullmatch('[0-9a-f]{64}', x_spc_sha256):
         raise HTTPException(400, 'SHA256 required')
@@ -373,7 +400,7 @@ async def receive(client: str, account: str, rel: str, request: Request,
             if old is None or old['sha'] != x_spc_sha256 or not destination.exists():
                 os.replace(staging, destination)
                 os.utime(destination, (orig_mtime, orig_mtime))
-            changed = upsert_file(db, client, account, rel, x_spc_sha256, size, orig_mtime, now)
+            changed = upsert_file(db, client, account, rel, x_spc_sha256, size, orig_mtime, now, game_name)
             db.commit()
         return {'ok': True, 'changed': changed, 'path': identifier}
     finally:
@@ -384,7 +411,7 @@ async def receive(client: str, account: str, rel: str, request: Request,
 def status(x_spc_token: Optional[str] = Header(default=None)):
     is_admin = authorize(x_spc_token)
     with database() as db:
-        rows = db.execute('SELECT client,account,kind,source,status,immich_id,error,updated_at FROM media '
+        rows = db.execute('SELECT client,account,kind,source,status,immich_id,error,updated_at,game_name FROM media '
                           'ORDER BY updated_at DESC LIMIT 500').fetchall()
         total_bytes = db.execute('SELECT COALESCE(SUM(size),0) FROM files').fetchone()[0]
         sources = db.execute('SELECT COUNT(*) FROM files').fetchone()[0]
