@@ -31,7 +31,7 @@ def steam_game_names():
     for root in list(roots):
         try:
             data = (root / 'libraryfolders.vdf').read_text(errors='replace')
-            for folder in re.findall(r'"path"\\s*"([^"]+)"', data):
+            for folder in re.findall(r'"path"\s*"([^"]+)"', data):
                 extra = Path(folder.replace('\\\\', '\\')) / 'steamapps'
                 if extra not in roots:
                     roots.append(extra)
@@ -41,10 +41,10 @@ def steam_game_names():
     for root in roots:
         try:
             for file in root.glob('appmanifest_*.acf'):
-                match = re.fullmatch(r'appmanifest_(\\d+)\\.acf', file.name)
+                match = re.fullmatch(r'appmanifest_(\d+)\.acf', file.name)
                 if not match:
                     continue
-                name = re.search(r'"name"\\s*"([^"]+)"', file.read_text(errors='replace'), re.I)
+                name = re.search(r'"name"\s*"([^"]+)"', file.read_text(errors='replace'), re.I)
                 if name:
                     result[match.group(1)] = name.group(1).strip()
         except OSError:
@@ -53,9 +53,9 @@ def steam_game_names():
 
 
 def capture_game_name(remote):
-    match = re.search(r'(?:^|/)(?:fg|bg)_(\\d+)_20\\d{6}_\\d{6}', remote)
+    match = re.search(r'(?:^|/)(?:fg|bg)_(\d+)_20\d{6}_\d{6}', remote)
     if not match:
-        match = re.search(r'(?:^|/)(\\d+)_\\d{14}_\\d+\\.(?:png|jpg|jpeg|webp)', remote)
+        match = re.search(r'(?:^|/)(\d+)_\d{14}_\d+\.(?:png|jpg|jpeg|webp)', remote)
     return steam_game_names().get(match.group(1), '') if match else ''
 
 
