@@ -11,6 +11,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from agent import discover, fingerprint
+from steam_screenshots import discover_captures, archived_native, screenshot_roots
 
 
 def read_json(path):
@@ -53,8 +54,8 @@ def local_snapshot(config_path=None, state_dir=None, check_remote=True):
     videos = Path(config.get('recordings', '/nonexistent')).expanduser()
     groups = defaultdict(lambda: {'files': 0, 'sent': 0, 'pending': 0, 'bytes': 0, 'pending_bytes': 0})
     total = {'files': 0, 'sent': 0, 'pending': 0, 'bytes': 0, 'pending_bytes': 0}
-    for path, remote, stat in discover(shots, videos, settle):
-        uploaded = known.get(remote) == fingerprint(path, stat)
+    for path, remote, stat in discover_captures(config):
+        uploaded = known.get(remote) == fingerprint(path, stat) or archived_native(remote, known)
         group_name = remote if remote.startswith('screenshots/') else '/'.join(remote.split('/')[:3])
         row = groups[group_name]
         for target in (row, total):
@@ -78,7 +79,8 @@ def local_snapshot(config_path=None, state_dir=None, check_remote=True):
         'groups': rows[:100],
         'group_count': len(rows),
         'last_sync': {key: runtime.get(key) for key in ('started_at', 'finished_at', 'uploaded', 'skipped', 'failed', 'last_error', 'running')},
-        'paths': {'screenshots': str(shots), 'recordings': str(videos), 'screenshots_found': shots.is_dir(), 'recordings_found': videos.is_dir()},
+        'paths': {'screenshots': str(shots), 'recordings': str(videos), 'screenshots_found': shots.is_dir(), 'recordings_found': videos.is_dir(),
+                  'steam_screenshots': [str(root) for root in screenshot_roots(config)]},
     }
     if check_remote:
         remote, error = get_remote_status(config)

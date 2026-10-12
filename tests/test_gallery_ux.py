@@ -9,14 +9,14 @@ from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'client'))
 try:
-    from PyQt6.QtCore import Qt, QSettings
-    from PyQt6.QtGui import QPixmap
-    from PyQt6.QtWidgets import QApplication, QPushButton, QSlider, QLabel
-    from PyQt6.QtTest import QTest
+    from PySide6.QtCore import Qt, QSettings
+    from PySide6.QtGui import QPixmap
+    from PySide6.QtWidgets import QApplication, QPushButton, QSlider, QLabel
+    from PySide6.QtTest import QTest
     from gallery_app import Gallery, FitPhoto, STYLE
     from gallery_model import MediaItem
 except ModuleNotFoundError as exc:
-    if exc.name and exc.name.startswith('PyQt6'):
+    if exc.name and exc.name.startswith('PySide6'):
         raise unittest.SkipTest('Native UX tests run in the Qt CI job') from exc
     raise
 
@@ -70,7 +70,7 @@ class GalleryUXTests(unittest.TestCase):
             self.gallery.items = self.items[:count]
             self.gallery.render()
             self.app.processEvents()
-            self.assertTrue(all(tile.width() == 240 for tile in self.gallery.tiles.values()))
+            self.assertTrue(all(tile.width() >= 330 for tile in self.gallery.tiles.values()))
             tiles = list(self.gallery.tiles.values())
             for tile in tiles:
                 labels = tile.findChildren(QLabel)
@@ -79,6 +79,22 @@ class GalleryUXTests(unittest.TestCase):
                 self.assertGreater(tiles[index].y(), tiles[index - self.gallery.columns].geometry().bottom())
             self.assert_controls_reachable(self.gallery.gallery_page)
         self.assertIs(self.gallery.scroll.widget(), self.gallery.wrapper.parentWidget())
+
+    def test_console_library_fits_without_horizontal_scroll_and_hints_stay_visible(self):
+        for width, height in ((1280, 720), (1920, 1080)):
+            self.gallery.showNormal()
+            self.gallery.resize(width, height)
+            self.gallery.items = self.items
+            self.gallery.render()
+            for _ in range(4):
+                self.app.processEvents()
+            self.assertEqual(self.gallery.scroll.horizontalScrollBar().maximum(), 0)
+            self.assertTrue(self.gallery.library_hints.isVisible())
+            self.assertLessEqual(self.gallery.library_hints.geometry().bottom(), height)
+            self.gallery.on_gamepad('next')
+            self.assertEqual(self.gallery.filter, 'photo')
+            self.gallery.on_gamepad('previous')
+            self.assertEqual(self.gallery.filter, 'all')
 
     def test_viewer_controls_and_keyboard_back(self):
         self.gallery.open_item(self.items[0])
@@ -189,6 +205,51 @@ class GalleryUXTests(unittest.TestCase):
         self.assertEqual(self.app.focusWidget().text(), 'No, go back')
         self.gallery.on_gamepad('back')
 
+    def test_removal_preflight_failure_does_not_trash_remote_asset(self):
+        from gallery_app import RemovalWorker
+        worker = RemovalWorker(self.items[0], {}, 'both')
+        errors = []
+        worker.done.connect(errors.append)
+        with patch('gallery_app.local_removal_targets', side_effect=ValueError('Missing original')), patch('gallery_app.urlopen') as remote:
+            worker.run()
+        remote.assert_not_called()
+        self.assertEqual(errors, ['Missing original'])
+
+    def test_both_removal_trashes_export_steam_original_and_thumbnail(self):
+        from gallery_app import RemovalWorker
+        from gallery_trash import move_to_trash
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            exports = root / 'exports'
+            exports.mkdir()
+            export = exports / '220_20261011011346_1.png'
+            export.write_bytes(b'png original')
+            steam = root / 'remote'
+            original = steam / '220/screenshots/20261011011346_1.jpg'
+            original.parent.mkdir(parents=True)
+            original.write_bytes(b'jpeg original')
+            thumb = original.parent / 'thumbnails' / original.name
+            thumb.parent.mkdir()
+            thumb.write_bytes(b'thumbnail')
+            item = MediaItem('capture', 'Capture', 'photo', 'ready', str(export), 'asset',
+                'screenshots/' + export.name, 0, local_copies=(('screenshots/' + export.name, str(export)),
+                ('screenshots/steam/220/screenshots/' + original.name, str(original))))
+            config = dict(screenshots=str(exports), server='http://test.invalid', token='test')
+            worker = RemovalWorker(item, config, 'both')
+            errors = []
+            worker.done.connect(errors.append)
+            with patch('steam_screenshots.screenshot_roots', return_value=[steam]), patch('gallery_app.urlopen') as remote, patch(
+                    'gallery_trash.move_to_trash', side_effect=lambda path: move_to_trash(path, home=root)):
+                remote.return_value.__enter__.return_value.status = 200
+                worker.run()
+            self.assertEqual(errors, [''])
+            remote.assert_called_once()
+            self.assertFalse(export.exists())
+            self.assertFalse(original.exists())
+            self.assertFalse(thumb.exists())
+            recovered = {path.read_bytes() for path in (root / '.local/share/Trash/files').iterdir()}
+            self.assertEqual(recovered, {b'png original', b'jpeg original', b'thumbnail'})
+
     def test_async_photo_failure_retry_and_stale_response(self):
         item = MediaItem('photo', 'Photo', 'photo', 'ready', '', 'asset', 'photo', 0)
         with patch.object(self.gallery.pool, 'start') as start:
@@ -202,7 +263,7 @@ class GalleryUXTests(unittest.TestCase):
             self.assertEqual(start.call_count, 2)
             pix = QPixmap(200, 100)
             pix.fill(Qt.GlobalColor.white)
-            from PyQt6.QtCore import QByteArray, QBuffer, QIODevice
+            from PySide6.QtCore import QByteArray, QBuffer, QIODevice
             data = QByteArray()
             buffer = QBuffer(data)
             buffer.open(QIODevice.OpenModeFlag.WriteOnly)
@@ -214,8 +275,41 @@ class GalleryUXTests(unittest.TestCase):
             viewer.photo_ready(item.key, b'invalid')
             self.assertTrue(viewer.closed)
 
+    def test_webp_decodes_when_qt_image_plugin_is_missing(self):
+        from io import BytesIO
+        from PIL import Image
+        from gallery_app import image_from_data
+        image = Image.new('RGB', (160, 90), '#238bd4')
+        data = BytesIO()
+        image.save(data, 'WEBP', lossless=True)
+        class WithoutWebP(QPixmap):
+            def loadFromData(self, *_):
+                return False
+        with patch('gallery_app.QPixmap', WithoutWebP):
+            decoded = image_from_data(data.getvalue())
+        self.assertFalse(decoded.isNull())
+        self.assertEqual((decoded.width(), decoded.height()), (160, 90))
+        self.assertEqual(decoded.toImage().pixelColor(0, 0).name(), '#238bd4')
+        self.assertTrue(image_from_data(b'invalid image').isNull())
+
+    def test_local_original_opens_without_immich_preview_request(self):
+        from dataclasses import replace
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'original.png'
+            image = QPixmap(200, 100)
+            image.fill(Qt.GlobalColor.white)
+            image.save(str(path))
+            item = replace(self.items[0], state='ready', immich_id='asset', local_path=str(path))
+            with patch.object(self.gallery.pool, 'start') as start:
+                self.gallery.open_item(item)
+                self.app.processEvents()
+            start.assert_not_called()
+            self.assertFalse(self.gallery.viewer.failed)
+            self.assertFalse(self.gallery.viewer.photo_loading)
+            self.assertEqual(self.gallery.viewer.notice.text(), 'Viewing local original')
+
     def test_playback_actions_volume_seek_replay_and_shutdown(self):
-        from PyQt6.QtMultimedia import QMediaPlayer
+        from PySide6.QtMultimedia import QMediaPlayer
         item = MediaItem('video', 'Video', 'video', 'waiting', '/missing.mp4', '', 'video', 0)
         self.gallery.set_preference('autoplay', False)
         self.gallery.open_item(item)
@@ -262,7 +356,7 @@ class GalleryUXTests(unittest.TestCase):
         self.assertEqual(actions, ['select', 'back', 'play', 'details', 'previous', 'next', 'settings'])
 
     def test_loading_error_and_paused_video_keep_controls_visible(self):
-        from PyQt6.QtMultimedia import QMediaPlayer
+        from PySide6.QtMultimedia import QMediaPlayer
         item = MediaItem('video', 'Video', 'video', 'waiting', '/missing.mp4', '', 'video', 0)
         self.gallery.set_preference('autoplay', False)
         self.gallery.open_item(item)

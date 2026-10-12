@@ -346,12 +346,12 @@ async def lifespan(app):
     worker.join(timeout=3)
 
 
-app = FastAPI(title='Steam Personal Cloud', version='0.3.0-preview', lifespan=lifespan)
+app = FastAPI(title='Steam Personal Cloud', version='0.3.0-beta.1', lifespan=lifespan)
 
 
 @app.get('/health')
 def health():
-    return {'status': 'ok', 'version': '0.3.0-preview', 'immich_configured': bool(IMMICH_URL and IMMICH_KEY)}
+    return {'status': 'ok', 'version': '0.3.0-beta.1', 'immich_configured': bool(IMMICH_URL and IMMICH_KEY)}
 
 
 @app.put('/api/files/{client}/{account}/{rel:path}')

@@ -1,68 +1,64 @@
-# Native Steam Gallery (v0.3 preview)
+# Gallery guide
 
-`Steam Personal Cloud Gallery` is the primary fullscreen-capable Linux Qt6 application. It is a real native application, not a browser tab or a WebView. The older read-only local HTTP dashboard remains available as **Steam Personal Cloud Diagnostics** for advanced users; its loopback media proxy is also used for ranged playback via Qt Multimedia. The upload agent and personal-cloud server are unchanged except for a narrow authenticated media proxy + Immich Trash API.
+Steam Personal Cloud Gallery is the primary native Linux application. It uses Qt through PySide6 and runs in one window, including viewing, settings and removal. The browser-based Diagnostics screen is separate and intended for troubleshooting.
 
-## Playing on Xubuntu / Steam
+## Start through Steam
 
-Install the `.deb` (released via GitHub Actions), then launch **Steam Personal Cloud Gallery** from the Xubuntu app menu, or add `/usr/bin/steam-personal-cloud-gallery --fullscreen` as a non-Steam game. Steam Input's keyboard template supports D-pad mapped to arrows, A mapped to Return, and B mapped to Escape. On Linux the app also reads a single available `/dev/input/js*` gamepad (prefers Steam/Xbox controllers) for directional navigation, A/select, B/back, and details. Controller mappings vary by model; keyboard is the reliable fallback. System joystick access is best-effort and never grabs devices.
+Install the compiled client package, complete `steam-personal-cloud-setup`, and add **Steam Personal Cloud Gallery** as a non-Steam game. Set launch options to `--fullscreen` for Big Picture use. Steam Input can map the keyboard shortcuts below. Raw Linux joystick support reads one available controller without grabbing the device; button numbering varies between controller models.
 
-## Status language
-
-- **Waiting**: capture is still local or newer than the last successfully backed-up copy.
-- **Preparing for Immich**: the game center transferred source fragments to the family server; they are not yet available in Immich. Transfer details are only in the advanced panel.
-- **Processing**: server has the recording but is working on assembly or Immich upload.
-- **Available in Immich**: asset has a current server-recorded Immich ID; Immich may still be generating previews or transcodes.
-- **Needs attention**: retryable server-side processing error.
-
-Video groups represent Steam recording directories and may consist of many `.m4s` pieces. They are **not** directly playable until the family server assembles the recording and Immich accepts it. Native player requests the transcoded playback endpoint (`/api/assets/{id}/video/playback`) through the authenticated server and loopback proxies. No Immich API key is sent to the client.
-
-## Deletion behavior
-
-An expanded action asks users to select **Local copy**, **Immich copy**, or **Both**, then asks for confirmation. Local copies go to the desktop user's Trash (not `unlink`); recording folder deletion moves that folder as a unit. Immich copies go to **Immich Trash**, not irreversible purge. `Both` attempts Immich first and stops if it fails, to prevent silent partial removal. Local path validation restricts deletion to a known screenshot file or recording directory under the configured library. Delete is only available when that copy exists. Existing original server inbox backups are intentionally retained; deleting from Immich does not erase the server archive. Device credentials are limited to the client's own assets.
-
-## Practical limitations
-
-- The virtual playback implementation is **new and not yet tested on the user's MacBook Pro A1707 or live Immich deployment**. H.264/AAC QtMultimedia availability depends on the Xubuntu 26.04 codec installation.
-- Remote gallery listing still follows the server's recent-media API limit; long-term large library pagination and Steam AppID/title artwork are tracked separately.
-- No real-time byte-level transfer graph; status is refreshed periodically (12 seconds) with the most recent agent sync state.
-- Steam overlay and controller button assignments vary by Steam Input layout; choose a keyboard mapping if the gamepad device is not visible.
-- Do not expose port 8787 on the public Internet. HTTP media is only intended for trusted LANs; use VPN/HTTPS for access outside the home.
-
-
-## Streamlined playback, covers and metadata
-
-Click a gallery tile to open an **inline** picture viewer or video player in the same native Steam window. A video in Immich starts automatically; play/pause, a seek slider and 10-second skip buttons are available. Qt's media probe now advertises the full stream length; Immich's preferred transcoded playback endpoint falls back to the original video if transcoding has not finished and the codec is supported.
-
-Ready captures prefer Immich's canonical thumbnail, even if a local source exists. Steam's available \`thumbnail.*\`, \`thumb.*\`, \`preview.*\`, \`poster.*\`, or \`cover.*\` files provide a local fallback; not every Steam installation creates a separate thumbnail file, so a generic tile may remain until Immich generates its preview.
-
-Folder IDs are no longer displayed as user-facing titles. We consult Steam \`appmanifest_<appid>.acf\` in installed library directories for a game title and parse the recording date in local time. If no matching game is installed, the gallery uses an accessible generic label and date rather than a raw ID. New uploads send game titles to the family server, which writes an Immich game-title tag. It also attempts an optional \`asset.update\` description containing game, date and media type; an API key without that permission will still archive, but description updates are skipped.
-
-Saved Steam clip folders may embed the same \`fg_...\` video session already present in a temporary recordings folder. A ready saved clip takes precedence in the local gallery; **neither copy is erased** by deduplication. All database/media deletion actions remain explicit and separate. Existing duplicate Immich assets are not silently removed.
-
-A saved clip's metadata may refer to multiple Steam DASH sessions; the video remuxer still needs real-recording validation. Use the error shown in Advanced details if playback remains unavailable.
-
-
-## Console-style viewing and settings
-
-The gallery uses explicit selected filter tabs, large focus outlines, and tiles that scroll without compressing their capture labels. The active filter determines the viewer's browsing order. **Previous / Next** and an **N of M** counter let you browse without returning to the grid. The order is held steady while viewing, and Back returns focus to the last viewed capture. Navigation stops at the first and last capture.
-
-The viewer keeps the entire photo or video visible. Its header and controls collapse after four seconds of inactivity while a photo is available or video is playing. Move the pointer or use a navigation input to reveal them; the first navigation/activation input only reveals controls. Direct play/pause, previous/next, and Back shortcuts still act immediately. Controls stay visible while paused, loading, or showing an error. Remote photos load in the background, retaining the local image when available; a failed request offers Retry. Video playback offers replay, ±10-second seeking, mute, and volume. Playback never automatically advances to another capture.
-
-| Action | Keyboard | Standard Xbox-style raw joystick |
+| Action | Keyboard | Standard Xbox-style controller |
 | --- | --- | --- |
-| Navigate | Arrows | D-pad / stick |
+| Navigate | Arrows | D-pad or stick |
 | Activate focused control | Enter | A |
 | Back | Escape | B |
-| Play / pause video | Space | X |
-| Previous / next capture | Page Up / Page Down | LB / RB |
+| Play or pause | Space | X |
+| Previous/next capture, or library filter | Page Up/Page Down | LB/RB |
 | Details | I | Y |
 | Settings | S | Menu |
-| Fullscreen | F11 | Settings button |
+| Refresh library | R | Focus the Refresh button and select |
+| Toggle fullscreen | F11 | Settings action |
 
-Steam Input can map the keyboard shortcuts above. Raw Linux joystick button numbering varies by controller, so these labels describe the standard Xbox-style layout rather than guaranteed Nintendo or PlayStation mappings. Tab navigation is also supported. On sliders, left/right adjusts playback by ten seconds or volume by five percent. Space controls playback in the viewer and does not activate a focused removal button.
+On the seek slider, left/right skips ten seconds. On volume, it changes five percentage points. Back at the library keeps the app open; **Exit gallery** is in Settings. The active filter determines the viewer's capture sequence. Back returns focus to the last viewed capture.
 
-**Settings** is an inline screen with video autoplay (default on), automatic control hiding (on), volume (80%), mute (off), and launch fullscreen (off). Preferences are saved with Qt QSettings, separately from pairing configuration; the `--fullscreen` launch argument overrides the saved launch preference. Changes apply immediately, Restore defaults resets preferences, and Toggle fullscreen now changes the current window. Exit gallery is an explicit Settings action; Back at the library does not leave fullscreen or exit the app.
+## Captures and status
 
-**Details** shows capture type, date, copy availability, and any capture processing error. Opening Details, Settings, or removal pauses video; returning leaves it paused. Removal remains an explicit **Remove…** action and the final confirmation defaults to **No, go back**. Secondary screens block viewer playback, browsing, and removal shortcuts.
+The gallery reads the configured screenshot export folder and the active account's native Steam screenshot library. It supports native and Flatpak Steam installations. Original JPEGs and exported PNGs with the same game ID, timestamp and capture number appear as one capture; thumbnail derivatives are excluded.
 
-Offscreen tests exercise controller navigation, view sizing at 720p/1080p, photo loading failures, preference persistence, and playback controls. Actual Steam Input/raw controller operation, Qt video auto-hide behavior, and live Immich streaming still require validation on the Xubuntu game center.
+| Status | Meaning |
+| --- | --- |
+| Waiting to back up | A local capture has not been acknowledged by the server. |
+| Preparing for Immich | Sources have transferred, but the capture is not ready in Immich. |
+| Processing | The server is assembling or uploading the capture. |
+| Available in Immich | The server has a current Immich asset ID. Previews or transcodes may still be processing. |
+| Needs attention | A processing error needs retry or investigation. |
+| Local only · Immich trashed | A local original remains after its Immich copy was removed. |
+
+New local captures appear immediately in the gallery; the uploader still observes the configured settling period. Already archived exports prevent remaining native JPEGs from being uploaded as new captures after an Immich removal.
+
+Saved clip directories may contain the same source session as a temporary recording directory. An Immich-ready saved clip takes precedence in the gallery. Deduplication does not erase either local recording.
+
+## Viewing and settings
+
+Photos use an available local original immediately. Remote-only photos load in the background and offer Retry on failure. WebP previews and covers also decode when Qt's optional WebP plugin is absent.
+
+Videos stream through authenticated server and loopback proxies. The app prefers Immich's transcoded playback endpoint and can fall back to the original when conversion is incomplete. The Immich API key is never sent to the client. Recordings consisting of `.m4s` fragments are not directly playable before server processing.
+
+The viewer fits the whole image. Controls hide after four seconds of inactivity while a photo is available or video is playing. The first navigation/selection input reveals hidden controls; Back, play/pause and previous/next shortcuts act immediately. Controls remain visible during loading, pause or error. Playback never automatically advances to another capture.
+
+Settings remember autoplay, control hiding, volume, mute and launch-fullscreen preferences. `--fullscreen` overrides the saved launch preference. Changes apply immediately. Opening Settings, Details or removal pauses video; returning leaves it paused.
+
+## Removal
+
+**Remove…** asks you to choose local copies, Immich copies or both, then asks for confirmation with cancellation focused by default.
+
+- Local screenshot removal includes matched exports, Steam originals and Steam thumbnails. Files go to your desktop Trash.
+- Recording removal moves the selected recording directory as a unit.
+- Remote removal moves matched assets to Immich Trash, without permanent purge.
+- Both validates every local target first, then attempts Immich removal before local removal. A failed remote operation stops local removal.
+- Removal runs in the background and disables further actions until completion. Partial failures are reported; refresh before retrying.
+
+Server inbox archives are retained. Steam owns its live `screenshots.vdf` catalogue; the app removes files but does not rewrite that catalogue. Steam can retain a cached or missing-file entry in its native media browser.
+
+## Troubleshooting
+
+Open Diagnostics for transfer and server state, or read user service logs as described in the [README](../README.md). A valid local photo can be viewed without the server. Video availability depends on server processing, Immich and supported codecs. Keep another backup while testing recording formats.

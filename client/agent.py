@@ -63,6 +63,9 @@ def steam_game_names():
                 if name:
                     result[str(app_id)] = name
                     result[str((app_id << 32) | 0x02000000)] = name
+    from steam_screenshots import catalogue_names
+    for game_id, name in catalogue_names().items():
+        result.setdefault(game_id, name)
     return result
 
 
@@ -70,6 +73,8 @@ def capture_game_name(remote):
     match = re.search(r'(?:^|/)(?:fg|bg)_(\d+)_20\d{6}_\d{6}', remote)
     if not match:
         match = re.search(r'(?:^|/)(\d+)_\d{14}_\d+\.(?:png|jpg|jpeg|webp)', remote)
+    if not match:
+        match = re.search(r'^screenshots/steam/(\d+)/screenshots/', remote)
     return steam_game_names().get(match.group(1), '') if match else ''
 
 
@@ -189,6 +194,7 @@ def pair_device(base_url: str, code: str, client_id: str, account: str):
 
 
 def sync(config: dict):
+    from steam_screenshots import discover_captures, archived_native
     state = Path(config.get('state_dir', '~/.local/state/steam-personal-cloud')).expanduser()
     state.mkdir(parents=True, exist_ok=True)
     started = time.time()
@@ -197,12 +203,11 @@ def sync(config: dict):
         db.execute('CREATE TABLE IF NOT EXISTS sent (remote TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, sha TEXT NOT NULL)')
         ok, skipped, failed = 0, 0, 0
         last_error = ''
-        for path, remote, stat in discover(Path(config['screenshots']).expanduser(),
-                                           Path(config['recordings']).expanduser(),
-                                           int(config.get('settle_seconds', 45))):
+        known = dict(db.execute('SELECT remote,fingerprint FROM sent'))
+        for path, remote, stat in discover_captures(config):
             fp = fingerprint(path, stat)
             row = db.execute('SELECT fingerprint FROM sent WHERE remote=?', (remote,)).fetchone()
-            if row and row[0] == fp:
+            if row and row[0] == fp or archived_native(remote, known):
                 skipped += 1
                 continue
             try:

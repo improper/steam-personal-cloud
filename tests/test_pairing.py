@@ -38,7 +38,7 @@ class PairingTest(unittest.TestCase):
     def test_pairing_redeem_once_and_scoped_upload(self):
         self.assertEqual(self.http.post('/api/pair/codes').status_code, 401)
         code = self.issue()
-        payload = {'code': code, 'client_id': 'gamecenter', 'steam_account': '728364463'}
+        payload = {'code': code, 'client_id': 'gamecenter', 'steam_account': '123456789'}
         resp = self.http.post('/api/pair/redeem', json=payload)
         self.assertEqual(resp.status_code, 200, resp.text)
         device_token = resp.json()['token']
@@ -48,7 +48,7 @@ class PairingTest(unittest.TestCase):
         data = b'png-test-image'
         h = {'X-SPC-Token': device_token, 'X-SPC-SHA256': hashlib.sha256(data).hexdigest(),
              'X-SPC-Modified': str(time.time()-200)}
-        result = self.http.put('/api/files/gamecenter/728364463/screenshots/example.png',
+        result = self.http.put('/api/files/gamecenter/123456789/screenshots/example.png',
                                headers=h, content=data)
         self.assertEqual(result.status_code, 200, result.text)
         self.assertEqual(self.http.put('/api/files/gamecenter/another/screenshots/example.png',
@@ -74,7 +74,7 @@ class PairingTest(unittest.TestCase):
             db.execute('UPDATE pairings SET expires_at=?', (time.time()-10,))
             db.commit()
         resp = self.http.post('/api/pair/redeem', json={
-            'code': code, 'client_id': 'gamecenter', 'steam_account': '728364463'})
+            'code': code, 'client_id': 'gamecenter', 'steam_account': '123456789'})
         self.assertEqual(resp.status_code, 401)
 
 

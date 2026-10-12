@@ -1,7 +1,5 @@
 #!/bin/sh
 set -eu
-# Start the local read-only media proxy, needed for Immich thumbnails and video seek.
-# Gallery viewing of local captures still works if the service is unavailable.
 systemctl --user daemon-reload >/dev/null 2>&1 || true
-systemctl --user restart steam-personal-cloud-ui.service >/dev/null 2>&1 || true
-exec /usr/bin/python3 /usr/lib/steam-personal-cloud/gallery_app.py "$@"
+systemctl --user start steam-personal-cloud-ui.service >/dev/null 2>&1 || true
+exec /usr/lib/steam-personal-cloud/steam-personal-cloud gallery "$@"

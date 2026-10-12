@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import getpass
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -43,7 +42,7 @@ def server_url(value):
     value = value.rstrip('/')
     u = urlsplit(value)
     if u.scheme not in ('http', 'https') or not u.hostname or u.username or u.password or u.query or u.fragment:
-        raise ValueError('Enter the full server URL, e.g. http://192.168.1.27:8787')
+        raise ValueError('Enter the full server URL, e.g. http://backup-server:8787')
     try:
         port = u.port
     except ValueError:
@@ -96,14 +95,15 @@ def health(server):
 
 
 def agent_module(package_mode):
-    path = (Path('/usr/lib/steam-personal-cloud/agent.py') if package_mode
-            else Path(__file__).parent / 'agent.py')
-    if not path.is_file():
-        raise RuntimeError(f'Sync agent missing: {path}')
-    spec = importlib.util.spec_from_file_location('spc_pairing_agent', path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    import agent
+    return agent
+
+
+def detected_account():
+    from steam_screenshots import steam_roots
+    accounts = {path.name for root in steam_roots() for path in (root / 'userdata').glob('*')
+                if path.is_dir() and path.name.isdigit() and path.name != '0'}
+    return next(iter(accounts)) if len(accounts) == 1 else ''
 
 
 def verify_token(server, token):
@@ -199,12 +199,12 @@ def install_units(package_mode):
         root = Path(__file__).resolve().parents[1]
         DATA.mkdir(parents=True, exist_ok=True)
         UNITS.mkdir(parents=True, exist_ok=True)
-        for filename in ('agent.py', 'local_status.py', 'local_dashboard.py', 'local_dashboard.html'):
+        for filename in ('agent.py', 'local_status.py', 'local_dashboard.py', 'local_dashboard.html', 'steam_screenshots.py'):
             shutil.copy2(root / 'client' / filename, DATA / filename)
         for unit in ('steam-personal-cloud-sync.service', 'steam-personal-cloud-sync.timer'):
             shutil.copy2(root / 'client' / unit, UNITS / unit)
         ui = (root / 'client' / 'steam-personal-cloud-ui.service').read_text()
-        ui = ui.replace('/usr/lib/steam-personal-cloud/local_dashboard.py', '%h/.local/share/steam-personal-cloud/local_dashboard.py')
+        ui = ui.replace('/usr/lib/steam-personal-cloud/steam-personal-cloud proxy', '/usr/bin/python3 %h/.local/share/steam-personal-cloud/local_dashboard.py')
         (UNITS / 'steam-personal-cloud-ui.service').write_text(ui)
     commands = [
         ['systemctl', '--user', 'daemon-reload'],
@@ -250,9 +250,9 @@ def run():
     if action == '1':
         config = dict(existing)
     else:
-        server = prompt_server(existing.get('server', 'http://192.168.1.27:8787'))
+        server = prompt_server(existing.get('server', ''))
         client = prompt_identity('Client name', existing.get('client_id', os.uname().nodename.split('.')[0]))
-        account = prompt_identity('Steam userdata account ID', existing.get('steam_account', '728364463'))
+        account = prompt_identity('Steam userdata account ID', existing.get('steam_account', detected_account()))
         shots = ask('Screenshot directory', existing.get('screenshots', str(Path.home() / 'Gameplay/Screenshots')))
         videos = ask('Recording directory', existing.get('recordings', str(Path.home() / 'Gameplay/Recordings')))
         rate = prompt_rate(existing.get('max_mib_per_second', 0))
@@ -263,7 +263,7 @@ def run():
                       screenshots=shots, recordings=videos, max_mib_per_second=rate,
                       settle_seconds=int(existing.get('settle_seconds', 45)))
     server = config['server']
-    print('\nChecking family server…')
+    print('\nChecking backup server…')
     while not health(server):
         answer = choose('Could not reach the server', {'1': 'Try again', '2': 'Change server URL',
                                                          '3': 'Continue offline with existing pairing',
@@ -298,7 +298,7 @@ def run():
     write_config(config)
     running = install_units(package_mode)
     print('\nSetup complete.' if running else '\nSettings saved; background sync needs attention.')
-    print('  Open Steam Personal Cloud from your applications menu for LOCAL library status.')
+    print('  Open Steam Personal Cloud Gallery from your applications menu or Steam.')
     print('  Manual scan: systemctl --user start steam-personal-cloud-sync.service')
     print('  Logs: journalctl --user -u steam-personal-cloud-sync.service -n 30 --no-pager')
 

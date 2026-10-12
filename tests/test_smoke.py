@@ -54,7 +54,7 @@ class AgentTests(unittest.TestCase):
                     return FakeResponse()
                 def close(self): pass
             with patch.object(agent.http.client, 'HTTPConnection', FakeConnection), patch.object(agent.time, 'sleep') as sleeper:
-                agent.send_file('http://example.test:8787', 'token', 'gamecenter', '728364463', path, 'screenshots/capture.png', path.stat(), agent.sha256_file(path), 0)
+                agent.send_file('http://example.test:8787', 'token', 'gamecenter', '123456789', path, 'screenshots/capture.png', path.stat(), agent.sha256_file(path), 0)
                 sleeper.assert_not_called()
 
 if __name__ == '__main__':

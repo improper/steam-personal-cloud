@@ -6,12 +6,11 @@ if [[ -f .env ]]; then
   echo 'Existing .env found; refusing to overwrite. Edit it manually or make a backup first.'
   exit 1
 fi
-read -rp 'Bind IP on this server [192.168.1.27]: ' bind
-bind=${bind:-192.168.1.27}
+read -rp 'Bind IP on this server [127.0.0.1]: ' bind
+bind=${bind:-127.0.0.1}
 read -rp 'Host bind port [8787]: ' bind_port
 bind_port=${bind_port:-8787}
-read -rp 'Immich server URL [http://192.168.1.27:2283]: ' immich
-immich=${immich:-http://192.168.1.27:2283}
+read -rp 'Immich server URL (reachable from Docker): ' immich
 read -rsp 'Immich API key (hidden): ' immich_key; printf '\n'
 [[ -n "$immich_key" ]] || { echo 'API key cannot be empty'; exit 1; }
 read -rp 'Immich album [Game Center]: ' album
@@ -38,5 +37,5 @@ EOF
 chmod 600 .env
 mkdir -p "$storage"
 echo 'Configured. Run: docker compose up -d --build'
-echo 'To retrieve the shared client token on this machine: grep ^SPC_TOKEN= .env'
+echo 'Use the server dashboard to generate a one-time client pairing code.'
 echo 'Do not share .env or commit it to Git.'

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Native 10-foot Steam Personal Cloud gallery (PyQt6; no embedded browser)."""
+"""Native 10-foot Steam Personal Cloud gallery (PySide6; no embedded browser)."""
 from __future__ import annotations
 
 import argparse
@@ -8,47 +8,127 @@ import sys
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-from PyQt6.QtCore import QObject, QRunnable, QSize, Qt, QThread, QTimer, QUrl, QEvent, QSettings, pyqtSignal
-from PyQt6.QtGui import QColor, QImageReader, QPixmap, QPainter
-from PyQt6.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout, QLabel,
+from PySide6.QtCore import QObject, QRunnable, QSize, Qt, QThread, QTimer, QUrl, QEvent, QSettings, Signal as pyqtSignal
+from PySide6.QtGui import QColor, QImage, QImageReader, QPixmap, QPainter, QPainterPath, QPen
+from PySide6.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout, QLabel,
     QMainWindow, QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget, QStackedWidget, QProgressBar, QSizePolicy)
-from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
-from PyQt6.QtMultimediaWidgets import QVideoWidget
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+from PySide6.QtMultimediaWidgets import QVideoWidget
 
-from gallery_model import MediaItem, make_gallery, validate_local_target
+from gallery_model import MediaItem, make_gallery, local_removal_targets
 from gamepad_linux import JoystickReader
 from local_status import read_json
 
 BASE = 'http://127.0.0.1:18787'
 STYLE = '''
-QWidget { color: #f3f7ff; background: #0d1523; font-family: "Noto Sans", "DejaVu Sans"; }
-QMainWindow, QScrollArea, QScrollArea > QWidget > QWidget { background: #0d1523; }
-QLabel#eyebrow { color: #89baff; font-size: 16px; font-weight: 700; }
-QLabel#headline { color: #f7fbff; font-weight: 800; font-size: 34px; }
-QLabel#subtitle, QLabel#hint { color: #9eb0c9; font-size: 15px; }
-QLabel#summary { background: #19283c; color: #dceaff; padding: 11px 20px; border-radius: 14px; font-size: 16px; }
-QPushButton { background: #233954; color: #e4f0ff; font-size: 18px; font-weight: 600; border: 2px solid #304b67; border-radius: 13px; padding: 11px 19px; }
-QPushButton:focus { border: 3px solid #80ceff; background: #2d5476; }
-QPushButton:checked { background: #365f83; border-color: #89d6ff; }
-QPushButton:checked:focus { border: 3px solid #d4f3ff; background: #2d5476; }
+QWidget { color: #f2f6ff; background: #101b2c; font-family: "Noto Sans", "DejaVu Sans"; font-size: 24px; }
+QMainWindow, QScrollArea { background: #101b2c; }
+QLabel { background: transparent; }
+QLabel#eyebrow { color: #9ddcff; font-size: 20px; font-weight: 700; }
+QLabel#headline { color: #ffffff; font-weight: 800; font-size: 48px; }
+QLabel#subtitle, QLabel#hint { color: #c0cde0; font-size: 24px; }
+QLabel#summary { background: #1b2c43; color: #deedff; padding: 14px 22px; border-radius: 12px; font-size: 23px; }
+QPushButton { background: #253b55; color: #f2f6ff; font-size: 26px; font-weight: 600; border: 3px solid #39536f; border-radius: 12px; padding: 12px 22px; }
+QPushButton:focus { border: 4px solid #ffffff; background: #387da5; color: white; }
+QPushButton:checked { background: #2e6483; border-color: #82d9ff; }
+QPushButton:checked:focus { border: 4px solid #ffffff; background: #387da5; }
 QPushButton:hover { background: #355977; }
-QPushButton:disabled { color: #718299; background: #172437; border-color: #24364b; }
-QPushButton#tile { background: #1a2a3f; text-align: center; padding: 0; }
-QPushButton#tile:focus { border: 4px solid #9ae6ff; background: #2e5775; }
-QLabel#tileName { color: #e6f2ff; font-size: 18px; font-weight: 600; }
-QLabel#detail { color: #9db2cc; font-size: 14px; }
-QLabel#advanced { background: #17273b; padding: 16px; border-radius: 12px; font-size: 15px; }
-QSlider::groove:horizontal { height: 8px; background: #304056; border-radius: 4px; }
-QSlider::handle:horizontal { background: #89d6ff; width: 20px; margin: -7px 0; border-radius: 9px; }
+QPushButton:disabled { color: #8898ac; background: #19273a; border-color: #2c4058; }
+QPushButton#tile { background: #20334b; text-align: center; padding: 0; border-radius: 14px; }
+QWidget#captureCard { background: #1a2c43; border-radius: 16px; }
+QWidget#captureCard[focused="true"] { background: #2b5271; }
+QLabel#tileName { color: #ffffff; font-size: 28px; font-weight: 700; }
+QLabel#detail { color: #bccce0; font-size: 22px; }
+QLabel#status { font-size: 22px; font-weight: 600; }
+QLabel#advanced { background: #1b2c43; padding: 20px; border-radius: 12px; font-size: 23px; }
+QWidget#controlHints { background: #0a1220; border-top: 2px solid #2e4861; }
+QLabel#controllerKey { background: #31455e; border-radius: 8px; padding: 3px 9px; font-size: 21px; font-weight: 800; }
+QLabel#controllerKey[button="A"] { background: #246a4d; color: #d9ffea; }
+QLabel#controllerKey[button="B"] { background: #7d3547; color: #ffe2e8; }
+QLabel#controllerKey[button="X"] { background: #2a578e; color: #e0edff; }
+QLabel#controllerKey[button="Y"] { background: #756124; color: #fff1ba; }
+QLabel#keyboardKey { background: #19283b; border: 1px solid #536b83; border-radius: 6px; padding: 3px 8px; font-size: 19px; color: #d4e3f5; }
+QLabel#promptAction { font-size: 23px; font-weight: 600; }
+QSlider { min-height: 32px; background: transparent; }
+QSlider::groove:horizontal { height: 10px; background: #405772; border-radius: 5px; }
+QSlider::handle:horizontal { background: #9adeff; width: 26px; margin: -8px 0; border-radius: 10px; }
+QSlider::add-page:horizontal { background: #405772; border-radius: 5px; }
+QSlider::sub-page:horizontal { background: #82d9ff; border-radius: 5px; }
+QSlider::groove:horizontal:focus { background: #81c9ee; }
+QSlider::handle:horizontal:focus { background: white; }
+QScrollArea { border: none; }
+QScrollBar:vertical { background: #122238; width: 10px; }
+QScrollBar::handle:vertical { background: #526e89; min-height: 40px; border-radius: 5px; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 '''
+
+
+def console_style(height):
+    import re
+    scale = max(.65, min(1.2, height / 1080))
+    return re.sub(r'(\d+)px', lambda match: f'{max(1, round(int(match[1]) * scale))}px', STYLE)
+
+
+class ControlHints(QWidget):
+    """Always-visible, readable controller buttons and their keyboard equivalents."""
+    def __init__(self, actions, parent=None):
+        super().__init__(parent)
+        self.setObjectName('controlHints')
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(24, 12, 24, 12)
+        layout.setSpacing(18)
+        for controller, keyboard, action in actions:
+            group = QVBoxLayout()
+            group.setSpacing(6)
+            keys = QHBoxLayout()
+            keys.setSpacing(6)
+            if controller:
+                badge = QLabel(controller)
+                badge.setObjectName('controllerKey')
+                badge.setProperty('button', controller)
+                keys.addWidget(badge)
+            if keyboard:
+                key = QLabel(keyboard)
+                key.setObjectName('keyboardKey')
+                keys.addWidget(key)
+            keys.addStretch(1)
+            group.addLayout(keys)
+            label = QLabel(action)
+            label.setObjectName('promptAction')
+            group.addWidget(label)
+            layout.addLayout(group, 1)
 BADGES = {
     'waiting': ('● Waiting to back up', '#e9ae63'),
     'backed_up': ('◔ Preparing for Immich', '#80bcff'),
     'processing': ('◔ Processing', '#c7a9ff'),
     'ready': ('✓ Available in Immich', '#82ddb4'),
     'error': ('! Needs attention', '#ff8b9a'),
-    'deleted': ('○ Removed from Immich', '#adb4c1'),
+    'deleted': ('○ Local only · Immich trashed', '#c6d5e5'),
 }
+
+
+def image_from_data(data, max_size=None):
+    """Qt installations may omit the optional WebP image-format plugin."""
+    pix = QPixmap()
+    if pix.loadFromData(data):
+        return pix
+    try:
+        from PIL import Image, ImageOps
+        from io import BytesIO
+    except ImportError:
+        return pix
+    try:
+        with Image.open(BytesIO(data)) as image:
+            if image.width * image.height > 40_000_000:
+                return pix
+            image = ImageOps.exif_transpose(image).convert('RGBA')
+            if max_size:
+                image.thumbnail((max_size.width(), max_size.height()))
+            rgba = image.tobytes()
+            decoded = QImage(rgba, image.width, image.height, image.width * 4, QImage.Format.Format_RGBA8888).copy()
+            return QPixmap.fromImage(decoded)
+    except (OSError, ValueError, Image.DecompressionBombError):
+        return pix
 
 
 def local_image(path, max_size=QSize(350, 190)):
@@ -60,7 +140,12 @@ def local_image(path, max_size=QSize(350, 190)):
     if dimension.isValid():
         reader.setScaledSize(dimension.scaled(max_size, Qt.AspectRatioMode.KeepAspectRatio))
     image = reader.read()
-    return QPixmap.fromImage(image) if not image.isNull() else QPixmap()
+    if not image.isNull():
+        return QPixmap.fromImage(image)
+    try:
+        return image_from_data(Path(path).read_bytes(), max_size)
+    except OSError:
+        return QPixmap()
 
 
 def media_url(item, variant):
@@ -74,6 +159,32 @@ class SnapshotWorker(QThread):
             self.done.emit(*make_gallery())
         except Exception as exc:
             self.done.emit([], {'configured': False, 'error': str(exc)})
+
+
+class RemovalWorker(QThread):
+    done = pyqtSignal(str)
+    def __init__(self, item, config, choice, parent=None):
+        super().__init__(parent)
+        self.item, self.config, self.choice = item, config, choice
+
+    def run(self):
+        try:
+            # Preflight all originals before changing either location.
+            targets = local_removal_targets(self.item, self.config) if self.choice in ('local', 'both') else []
+            if self.choice in ('immich', 'both'):
+                for asset in self.item.immich_copies or (self.item.immich_id,):
+                    request = Request(self.config['server'].rstrip('/') + '/api/media/' + asset + '/immich',
+                                      headers={'X-SPC-Token': self.config['token']}, method='DELETE')
+                    with urlopen(request, timeout=18) as response:
+                        if response.status != 200:
+                            raise RuntimeError('Server returned HTTP ' + str(response.status))
+            from gallery_trash import move_to_trash
+            for target in targets:
+                move_to_trash(target)
+        except Exception as exc:
+            self.done.emit(str(exc))
+            return
+        self.done.emit('')
 
 
 class ImageSignals(QObject):
@@ -114,16 +225,24 @@ class CoverButton(QPushButton):
             return super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        border = 4 if self.hasFocus() else 2
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        border = 6 if self.hasFocus() else 2
         area = self.rect().adjusted(border, border, -border, -border)
+        path = QPainterPath()
+        from PySide6.QtCore import QRectF
+        path.addRoundedRect(QRectF(area), 10, 10)
+        painter.setClipPath(path)
         cover = self.cover.scaled(area.size(), Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                                   Qt.TransformationMode.SmoothTransformation)
         painter.drawPixmap(area, cover, cover.rect().adjusted(
             (cover.width() - area.width()) // 2, (cover.height() - area.height()) // 2,
             -(cover.width() - area.width() + 1) // 2, -(cover.height() - area.height() + 1) // 2))
-        painter.setPen(QColor('#9ae6ff' if self.hasFocus() else '#304b67'))
-        for inset in range(border):
-            painter.drawRect(self.rect().adjusted(inset, inset, -inset - 1, -inset - 1))
+        painter.setClipping(False)
+        pen = QPen(QColor('#ffffff' if self.hasFocus() else '#39536f'))
+        pen.setWidth(border)
+        painter.setPen(pen)
+        inset = border // 2
+        painter.drawRoundedRect(self.rect().adjusted(inset, inset, -inset - 1, -inset - 1), 14, 14)
 
 
 class FitPhoto(QLabel):
@@ -145,17 +264,19 @@ class FitPhoto(QLabel):
 
 
 class Tile(QWidget):
-    def __init__(self, item, on_open, parent=None):
+    def __init__(self, item, on_open, parent=None, width=400):
         super().__init__(parent)
+        self.setObjectName('captureCard')
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.item = item
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(7)
+        layout.setContentsMargins(10, 10, 10, 16)
+        layout.setSpacing(8)
         self.button = CoverButton('▶  VIDEO' if item.kind == 'video' else '▣  SCREENSHOT')
         self.button.setObjectName('tile')
-        self.button.setFixedHeight(168)
+        self.button.setFixedHeight(round((width - 20) * 9 / 16))
         self.button.setMinimumWidth(1)
-        self.setFixedWidth(240)
+        self.setFixedWidth(width)
         self.button.setIconSize(QSize(220, 144))
         self.button.clicked.connect(lambda: on_open(self.item))
         self.button.setAccessibleName(item.name + ', ' + item.kind + ', ' + BADGES.get(item.state, BADGES['waiting'])[0])
@@ -163,7 +284,7 @@ class Tile(QWidget):
         media_type = QLabel('▶  VIDEO' if item.kind == 'video' else '▣  PHOTO')
         media_type.setObjectName('eyebrow')
         layout.addWidget(media_type)
-        title = QLabel(item.name)
+        title = QLabel(item.name.removesuffix(' Screenshot').removesuffix(' Game Clip').removesuffix(' Game Recording'))
         title.setObjectName('tileName')
         title.setWordWrap(True)
         layout.addWidget(title)
@@ -173,13 +294,14 @@ class Tile(QWidget):
             layout.addWidget(when)
         label, color = BADGES.get(item.state, BADGES['waiting'])
         status = QLabel(label)
-        status.setStyleSheet(f'color:{color}; background:transparent; font-size:16px; font-weight:700;')
+        status.setObjectName('status')
+        status.setStyleSheet(f'color:{color}; background:transparent;')
         layout.addWidget(status)
         if item.thumbnail:
-            self.set_preview(local_image(item.thumbnail))
+            self.set_preview(local_image(item.thumbnail, QSize(width, round(width * 9 / 16))))
         # A scroll area's first layout pass can otherwise compress tile rows
         # below their labels and make the cover overlap the metadata.
-        self.setMinimumHeight(max(layout.sizeHint().height(), layout.totalHeightForWidth(240)))
+        self.setMinimumHeight(max(layout.sizeHint().height(), layout.totalHeightForWidth(width)))
 
     def set_preview(self, pix):
         if not pix.isNull():
@@ -217,7 +339,7 @@ class Viewer(QWidget):
         subtitle.setObjectName('subtitle')
         headings.addWidget(subtitle)
         top.addLayout(headings, 1)
-        back = QPushButton('Back to gallery')
+        back = QPushButton('Back · B / Esc')
         back.clicked.connect(on_close)
         top.addWidget(back)
         outer.addWidget(self.header)
@@ -304,17 +426,15 @@ class Viewer(QWidget):
         navigation.addWidget(self.counter)
         navigation.addWidget(self.next)
         navigation.addStretch(1)
-        lower.addLayout(navigation)
-        actions = QHBoxLayout()
         for label, callback in [('Details', self.gallery.show_details), ('Settings', self.gallery.show_settings),
                                 ('Remove…', lambda: on_delete(item))]:
             button = QPushButton(label)
             button.clicked.connect(callback)
-            actions.addWidget(button)
-        lower.addLayout(actions)
-        hint = QLabel('A / Enter  Select   B / Esc  Back   X / Space  Play   LB/RB / PgUp/PgDn  Browse')
-        hint.setWordWrap(True)
-        hint.setObjectName('hint')
+            navigation.addWidget(button)
+        lower.addLayout(navigation)
+        hint = ControlHints([('A', 'Enter', 'Select'), ('B', 'Esc', 'Back'),
+                            ('X', 'Space', 'Play / pause'), ('LB / RB', 'PgUp / PgDn', 'Browse captures'),
+                            ('Y', 'I', 'Details'), ('Menu', 'S', 'Settings')])
         lower.addWidget(hint)
         outer.addWidget(self.chrome)
         for child in self.findChildren(QWidget):
@@ -331,6 +451,9 @@ class Viewer(QWidget):
             self.mute_button.setText('Unmute' if self.audio.isMuted() else 'Mute')
 
     def load_photo(self):
+        if not self.photo.original.isNull():
+            self.notice.setText('Viewing local original')
+            return
         if not (self.item.immich_id and self.item.state == 'ready'):
             return
         self.photo_loading = True
@@ -342,8 +465,8 @@ class Viewer(QWidget):
     def photo_ready(self, key, data):
         if self.closed:
             return
-        pix = QPixmap()
-        if not pix.loadFromData(data):
+        pix = image_from_data(data)
+        if pix.isNull():
             self.photo_failed(key)
             return
         self.photo_loading = False
@@ -476,7 +599,7 @@ class Gallery(QMainWindow):
         self.signals = ImageSignals()
         self.signals.ready.connect(self.apply_thumbnail)
         self.pool = None
-        from PyQt6.QtCore import QThreadPool as Pool
+        from PySide6.QtCore import QThreadPool as Pool
         self.pool = Pool.globalInstance()
         self.worker = None
         self.viewing = False
@@ -488,15 +611,23 @@ class Gallery(QMainWindow):
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.scroll.setWidget(root)
-        self.stack.addWidget(self.scroll)
-        self.gallery_page = self.scroll
+        self.gallery_page = QWidget()
+        library_layout = QVBoxLayout(self.gallery_page)
+        library_layout.setContentsMargins(0, 0, 0, 0)
+        library_layout.setSpacing(0)
+        library_layout.addWidget(self.scroll, 1)
+        self.library_hints = ControlHints([('D-pad', '↑ ↓ ← →', 'Navigate'), ('A', 'Enter', 'Open capture'),
+            ('LB / RB', 'PgUp / PgDn', 'Change filter'), ('Y', 'I', 'Details'),
+            ('Menu', 'S', 'Settings'), ('', 'R', 'Refresh library')])
+        library_layout.addWidget(self.library_hints)
+        self.stack.addWidget(self.gallery_page)
         self.viewer = None
         self.layout = QVBoxLayout(root)
         self.layout.setContentsMargins(38, 22, 38, 24)
         self.layout.setSpacing(16)
         headline = QHBoxLayout()
         branding = QVBoxLayout()
-        eyebrow = QLabel('YOUR CAPTURES  /  GAME CENTER')
+        eyebrow = QLabel('STEAM PERSONAL CLOUD  /  YOUR LIBRARY')
         eyebrow.setObjectName('eyebrow')
         branding.addWidget(eyebrow)
         title = QLabel('Your captures')
@@ -506,10 +637,10 @@ class Gallery(QMainWindow):
         subtitle.setObjectName('subtitle')
         branding.addWidget(subtitle)
         headline.addLayout(branding, 1)
-        advanced = QPushButton('Details')
+        advanced = QPushButton('Details · Y / I')
         advanced.clicked.connect(self.toggle_advanced)
         headline.addWidget(advanced, 0, Qt.AlignmentFlag.AlignTop)
-        settings_button = QPushButton('Settings')
+        settings_button = QPushButton('Settings · Menu / S')
         settings_button.clicked.connect(self.show_settings)
         headline.addWidget(settings_button, 0, Qt.AlignmentFlag.AlignTop)
         self.layout.addLayout(headline)
@@ -537,13 +668,10 @@ class Gallery(QMainWindow):
         self.layout.addLayout(actions)
         self.wrapper = QWidget()
         self.grid = QGridLayout(self.wrapper)
+        self.grid.setContentsMargins(0, 0, 0, 0)
         self.grid.setSpacing(22)
         self.grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.layout.addWidget(self.wrapper, 1)
-        foot = QLabel('D-pad / arrows  Navigate    A / Enter  View    Y / I  Details    Menu / S  Settings    R  Refresh')
-        foot.setWordWrap(True)
-        foot.setObjectName('hint')
-        self.layout.addWidget(foot)
         self.gamepad = JoystickReader(self.on_gamepad)
         self.gamepad_timer = QTimer(self)
         self.gamepad_timer.timeout.connect(self.gamepad.poll)
@@ -588,7 +716,12 @@ class Gallery(QMainWindow):
         status = ' · Server offline — local captures are available' if not rem.get('connected') else ''
         if not snap.get('configured', True):
             status = ' · Run steam-personal-cloud-setup to connect this device'
-        self.summary.setText(f"{len(items)} captures  ·  {ready} in Immich  ·  {preparing} preparing  ·  {waiting} waiting{status}")
+        parts = [f'{len(items)} captures', f'{ready} in Immich']
+        if preparing:
+            parts.append(f'{preparing} preparing')
+        if waiting:
+            parts.append(f'{waiting} waiting to back up')
+        self.summary.setText('  ·  '.join(parts) + status)
         self.summary.setWordWrap(True)
         result = snap.get('last_sync', {})
         details = [f"Server: {snap.get('server', 'Not configured')}  ({'Connected' if rem.get('connected') else 'Offline'})",
@@ -614,17 +747,20 @@ class Gallery(QMainWindow):
             if holder.widget():
                 holder.widget().hide()
                 holder.widget().deleteLater()
+        # Rebuild the layout so obsolete columns don't leave extra spacing
+        # or a horizontal scrollbar after a resize or filter change.
+        import shiboken6
+        shiboken6.delete(self.grid)
+        self.grid = QGridLayout(self.wrapper)
+        self.grid.setContentsMargins(0, 0, 0, 0)
+        self.grid.setSpacing(22)
+        self.grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.tiles = {}
-        for row in range(self.grid.rowCount()):
-            self.grid.setRowMinimumHeight(row, 0)
         shown = [x for x in self.items if self.filter == 'all' or x.kind == self.filter]
         max_columns = self.column_count()
         self.columns = max_columns
-        for col in range(6):
-            self.grid.setColumnStretch(col, 0)
-            self.grid.setColumnMinimumWidth(col, 0)
         for i, item in enumerate(shown):
-            tile = Tile(item, self.open_item)
+            tile = Tile(item, self.open_item, width=self.card_width())
             self.grid.addWidget(tile, i // max_columns, i % max_columns)
             self.tiles[item.key] = tile
             row = i // max_columns
@@ -644,16 +780,19 @@ class Gallery(QMainWindow):
         self.wrapper.setMinimumHeight(self.grid.minimumSize().height())
         self.wrapper.adjustSize()
         if focus_key and focus_key in self.tiles:
-            self.tiles[focus_key].button.setFocus()
-        elif self.tiles and (focused is None or focused is self.wrapper or focus_key):
-            next(iter(self.tiles.values())).button.setFocus()
+            target = self.tiles[focus_key].button
+            QTimer.singleShot(0, lambda: self.focus_control(target) if self.stack.currentWidget() is self.gallery_page else None)
+        elif self.tiles and (focused is None or focused is self.wrapper or focus_key or not getattr(self, 'initial_focus', False)):
+            target = next(iter(self.tiles.values())).button
+            QTimer.singleShot(0, lambda: self.focus_control(target) if self.stack.currentWidget() is self.gallery_page else None)
+            self.initial_focus = True
 
     def apply_thumbnail(self, key, data):
         tile = self.tiles.get(key)
         if not tile:
             return
-        pix = QPixmap()
-        if pix.loadFromData(data):
+        pix = image_from_data(data)
+        if not pix.isNull():
             tile.set_preview(pix)
 
     def toggle_advanced(self):
@@ -686,12 +825,21 @@ class Gallery(QMainWindow):
         self.pause_viewer()
         self.secondary_return = self.stack.currentWidget()
         self.secondary_focus = QApplication.focusWidget()
-        page = QScrollArea()
-        page.setWidgetResizable(True)
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(0)
+        self.secondary_scroll = QScrollArea()
+        self.secondary_scroll.setWidgetResizable(True)
         content = QWidget()
-        page.setWidget(content)
+        self.secondary_scroll.setWidget(content)
+        page_layout.addWidget(self.secondary_scroll, 1)
+        page_layout.addWidget(ControlHints([('D-pad', '↑ ↓ ← →', 'Navigate'), ('A', 'Enter', 'Select / change'),
+                                            ('B', 'Esc', 'Back')]))
         layout = QVBoxLayout(content)
         layout.setContentsMargins(40, 24, 40, 24)
+        layout.setSpacing(18)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         heading = QLabel(title)
         heading.setObjectName('headline')
         layout.addWidget(heading)
@@ -704,7 +852,7 @@ class Gallery(QMainWindow):
         back = QPushButton('Back')
         back.clicked.connect(self.close_secondary)
         layout.addWidget(back)
-        back.setFocus()
+        QTimer.singleShot(0, lambda: self.focus_control(back) if self.secondary_page else None)
 
     def close_secondary(self):
         page = self.secondary_page
@@ -726,17 +874,33 @@ class Gallery(QMainWindow):
         if layout is None:
             return
         self.setting_buttons = {}
-        for key, label in [('autoplay', 'Autoplay videos'), ('auto_hide', 'Hide viewer controls'),
-                           ('muted', 'Mute audio'), ('fullscreen', 'Launch fullscreen')]:
+        for key, label, description in [
+                ('autoplay', 'Autoplay videos', 'Start playing when you open a recording.'),
+                ('auto_hide', 'Hide viewer controls', 'Enjoy the full picture after four seconds of inactivity.'),
+                ('muted', 'Mute audio', 'Keep video playback silent.'),
+                ('fullscreen', 'Launch fullscreen', 'Open the gallery ready for your TV.')]:
+            row = QHBoxLayout()
+            text = QVBoxLayout()
+            name = QLabel(label)
+            name.setObjectName('tileName')
+            text.addWidget(name)
+            help_text = QLabel(description)
+            help_text.setObjectName('detail')
+            help_text.setWordWrap(True)
+            text.addWidget(help_text)
+            row.addLayout(text, 1)
             button = QPushButton()
+            button.setMinimumWidth(160)
             button.setCheckable(True)
-            def update_button(k=key, text=label, control=button):
+            button.setAccessibleName(label)
+            def update_button(k=key, control=button):
                 control.setChecked(self.preference(k))
-                control.setText(text + (' · On' if self.preference(k) else ' · Off'))
+                control.setText('✓ On' if self.preference(k) else 'Off')
             update_button()
             button.clicked.connect(lambda checked, k=key, update=update_button: (self.set_preference(k, checked), update()))
             self.setting_buttons[key] = (button, update_button)
-            layout.addWidget(button)
+            row.addWidget(button)
+            layout.addLayout(row)
         volume_label = QLabel()
         volume = QSlider(Qt.Orientation.Horizontal)
         volume.setRange(0, 100)
@@ -749,7 +913,8 @@ class Gallery(QMainWindow):
         layout.addWidget(volume)
         fullscreen = QPushButton('Toggle fullscreen now · F11')
         fullscreen.clicked.connect(self.toggle_fullscreen)
-        layout.addWidget(fullscreen)
+        other_actions = QHBoxLayout()
+        other_actions.addWidget(fullscreen)
         defaults = QPushButton('Restore defaults')
         def restore():
             for key, value in self.DEFAULTS.items():
@@ -758,8 +923,9 @@ class Gallery(QMainWindow):
                 update()
             volume.setValue(self.preference('volume'))
         defaults.clicked.connect(restore)
-        layout.addWidget(defaults)
-        controls = QLabel('Controls\nD-pad / arrows: navigate · A / Enter: select · B / Escape: back\nX / Space: play or pause · LB/RB / Page Up/Down: previous/next capture\nY / I: details · Menu / S: settings · F11: fullscreen · Tab: next control\nOn the seek bar, left/right skips 10 seconds. On volume, it adjusts 5%.\nSteam Input can map these keyboard shortcuts. Raw joystick mappings vary by controller.')
+        other_actions.addWidget(defaults)
+        layout.addLayout(other_actions)
+        controls = QLabel('Use left / right on volume to adjust by 5%. In videos, use left / right on the timeline to skip 10 seconds.')
         controls.setWordWrap(True)
         controls.setObjectName('subtitle')
         layout.addWidget(controls)
@@ -767,15 +933,18 @@ class Gallery(QMainWindow):
         exit_button.clicked.connect(self.close)
         layout.addWidget(exit_button)
         self.finish_secondary(layout)
+        first = self.setting_buttons['autoplay'][0]
+        QTimer.singleShot(0, lambda: self.focus_control(first) if self.secondary_page else None)
 
     def show_details(self):
-        if not self.viewer:
+        item = self.viewer.item if self.viewer else next((tile.item for tile in self.tiles.values()
+                    if tile.button.hasFocus()), None)
+        if item is None:
             self.toggle_advanced()
             return
         layout = self.open_secondary('Capture details')
         if layout is None:
             return
-        item = self.viewer.item
         text = QLabel(f'{item.name}\n{item.subtitle}\n{item.kind.title()} · {BADGES.get(item.state, BADGES["waiting"])[0]}\nLocal copy: {"Available" if item.local_path else "Unavailable"}\nImmich copy: {"Available" if item.immich_id and item.state == "ready" else "Unavailable"}' + (f'\nNeeds attention: {item.error}' if item.error else ''))
         text.setWordWrap(True)
         text.setObjectName('subtitle')
@@ -860,7 +1029,8 @@ class Gallery(QMainWindow):
         what = QLabel(f'{item.name}  ·  {item.subtitle}')
         what.setObjectName('subtitle')
         layout.addWidget(what)
-        self.delete_hint = QLabel('Choose where to remove this capture.\nLocal goes to your Xubuntu Trash; Immich goes to Immich Trash.\nThe original server inbox archive is retained.')
+        copies = len(item.local_copies) or int(local)
+        self.delete_hint = QLabel(f'Choose which copies to move to Trash.\nLocal includes all {copies} matched local copies, including Steam originals and exports.\nSteam may keep a cached media entry until its library refreshes.')
         self.delete_hint.setObjectName('subtitle')
         self.delete_hint.setWordWrap(True)
         layout.addWidget(self.delete_hint)
@@ -871,6 +1041,7 @@ class Gallery(QMainWindow):
         cancel = QPushButton('←  Back to capture')
         cancel.clicked.connect(self.close_delete_page)
         layout.addWidget(cancel)
+        layout.addWidget(ControlHints([('D-pad', '↑ ↓', 'Choose copies'), ('A', 'Enter', 'Select'), ('B', 'Esc', 'Cancel')]))
         for choice, label, enabled in [
             ('local', 'Remove local copy', local),
             ('immich', 'Move Immich copy to Trash', remote),
@@ -899,20 +1070,24 @@ class Gallery(QMainWindow):
             undo.setFocus()
 
         def execute(choice):
-            try:
-                if choice in ('immich', 'both'):
-                    req = Request(config['server'].rstrip('/') + '/api/media/' + item.immich_id + '/immich',
-                                  headers={'X-SPC-Token': config['token']}, method='DELETE')
-                    with urlopen(req, timeout=18) as response:
-                        if response.status != 200:
-                            raise RuntimeError('Server returned HTTP ' + str(response.status))
-                if choice in ('local', 'both'):
-                    from gallery_trash import move_to_trash
-                    move_to_trash(validate_local_target(item, config))
-            except Exception as exc:
-                self.delete_hint.setText('Removal needs attention: ' + str(exc) +
-                    '\nCheck Diagnostics before retrying; one location might have succeeded.')
+            self.removing = True
+            self.delete_hint.setText('Moving copies to Trash…')
+            for control in self.delete_page.findChildren(QPushButton):
+                control.setEnabled(False)
+            self.removal_worker = RemovalWorker(item, config, choice, self)
+            self.removal_worker.done.connect(removal_done)
+            self.removal_worker.start()
+
+        def removal_done(error):
+            self.removal_worker.wait()
+            self.removing = False
+            if error:
+                self.delete_hint.setText('Removal needs attention: ' + error +
+                    '\nA copy may already be in Trash. Go back and refresh before retrying.')
+                cancel.setEnabled(True)
+                cancel.setFocus()
                 return
+            self.pending_snapshot = None
             self.close_delete_page()
             self.close_viewer()
             self.signature = None
@@ -935,21 +1110,31 @@ class Gallery(QMainWindow):
                 self.focus_control(self.delete_focus)
 
     def column_count(self):
-        return max(1, min(6, (self.scroll.viewport().width() - 76 + 22) // 262))
+        return max(1, min(4, (self.scroll.viewport().width() - 76 + 22) // 370))
+
+    def card_width(self):
+        return max(240, (self.scroll.viewport().width() - 76 - (self.column_count() - 1) * 22) // self.column_count())
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self.setStyleSheet(console_style(self.height()))
         if hasattr(self, 'scroll') and hasattr(self, 'tiles'):
             QTimer.singleShot(0, self.reflow)
 
     def reflow(self):
-        if self.stack.currentWidget() is self.gallery_page and hasattr(self, 'grid') and self.column_count() != getattr(self, 'columns', None):
+        if self.stack.currentWidget() is self.gallery_page and hasattr(self, 'grid') and (self.column_count(), self.card_width(), self.height()) != getattr(self, 'grid_size', None):
+            self.grid_size = (self.column_count(), self.card_width(), self.height())
             self.render()
 
     def focus_control(self, control):
         control.setFocus(Qt.FocusReason.OtherFocusReason)
         page = self.stack.currentWidget()
-        if isinstance(page, QScrollArea):
+        if page is self.gallery_page:
+            if self.scroll.isAncestorOf(control):
+                self.scroll.ensureWidgetVisible(control, 20, 20)
+        elif page is self.secondary_page:
+            self.secondary_scroll.ensureWidgetVisible(control, 20, 20)
+        elif isinstance(page, QScrollArea):
             page.ensureWidgetVisible(control, 20, 20)
 
     def navigate(self, action):
@@ -982,6 +1167,8 @@ class Gallery(QMainWindow):
             self.focus_control(min(candidates, key=lambda candidate: candidate[:2])[2])
 
     def on_gamepad(self, action):
+        if getattr(self, 'removing', False):
+            return
         page = self.stack.currentWidget()
         in_viewer = self.viewer is not None and page is self.viewer
         if in_viewer:
@@ -1000,6 +1187,9 @@ class Gallery(QMainWindow):
         elif action in ('previous', 'next'):
             if in_viewer:
                 self.step_capture(-1 if action == 'previous' else 1)
+            elif page is self.gallery_page:
+                keys = list(self.filters)
+                self.select_filter(keys[(keys.index(self.filter) + (-1 if action == 'previous' else 1)) % len(keys)])
         elif action == 'back':
             if getattr(self, 'delete_page', None):
                 self.close_delete_page()
@@ -1030,6 +1220,17 @@ class Gallery(QMainWindow):
             self.viewer.reveal_controls()
         if event.type() == QEvent.Type.FocusIn and isinstance(watched, (QPushButton, QSlider)):
             page = self.stack.currentWidget()
+            if page is self.gallery_page and self.scroll.isAncestorOf(watched):
+                self.scroll.ensureWidgetVisible(watched, 20, 20)
+            elif page is self.secondary_page:
+                self.secondary_scroll.ensureWidgetVisible(watched, 20, 20)
+        if event.type() in (QEvent.Type.FocusIn, QEvent.Type.FocusOut) and isinstance(watched, CoverButton):
+            card = watched.parentWidget()
+            card.setProperty('focused', event.type() == QEvent.Type.FocusIn)
+            card.style().unpolish(card)
+            card.style().polish(card)
+        if event.type() == QEvent.Type.FocusIn and isinstance(watched, (QPushButton, QSlider)):
+            page = self.stack.currentWidget()
             if isinstance(page, QScrollArea) and page.isAncestorOf(watched):
                 page.ensureWidgetVisible(watched, 20, 20)
         if event.type() == QEvent.Type.KeyPress and QApplication.activeModalWidget() is None:
@@ -1052,6 +1253,9 @@ class Gallery(QMainWindow):
         return super().eventFilter(watched, event)
 
     def closeEvent(self, event):
+        if getattr(self, 'removing', False):
+            event.ignore()
+            return
         self.timer.stop()
         self.gamepad_timer.stop()
         self.gamepad.close()

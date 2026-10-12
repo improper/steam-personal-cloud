@@ -1,109 +1,75 @@
-# Steam Personal Cloud — native gallery preview v0.3
+# Steam Personal Cloud
 
-A **self-hosted Steam capture backup and Immich ingest pipeline**. Steam clients only read completed-enough files and send them at a configurable rate; the family server does FFmpeg processing and Immich uploads. Steam's original files are never modified or deleted.
+Steam Personal Cloud brings Steam screenshots and saved recordings into a native, controller-friendly library and backs them up to a self-hosted server with Immich integration.
 
-> **Early prototype.** Steam's segmented video format varies by Steam version, recording type and session. DASH remuxing is implemented, but has **not yet been validated with the actual recordings from the Xubuntu gamecenter**. Rolling buffer preservation across overwritten chunks is not guaranteed; do not rely on this as your only copy. Keep Steam's recording storage and local backup until verified.
+**First beta: v0.3.0-beta.1.** The Linux client is distributed as a compiled Debian package for Ubuntu 24.04 or later on x86-64. This is proprietary software; no open-source license is granted. Third-party libraries retain their own licenses. See [COPYRIGHT](COPYRIGHT) and [third-party notices](THIRD_PARTY_NOTICES.md).
 
-## Components
+## What the beta includes
 
-- `client/agent.py`: Python standard-library file sender. Scans screenshot/recording directories every minute with a systemd **user** timer, sends new/changed `.png/.jpg/.webp/.mpd/.m4s/.pb/.mp4` files with SHA-256 and unlimited upload speed by default (`0` MiB/s), or an optional client-side rate cap. Skips recently written files and symlinks; retries on failure. No FFmpeg, Node, or Immich credentials on game clients.
-- `server/app.py`: one FastAPI receiver / worker with persistent SQLite state. Keeps uploaded originals; considers video sessions idle after 10 minutes, then attempts lossless DASH→MP4 remux on the server. Uploads media to Immich, adds it to a `Game Center` album and applies hierarchical tags for account, client, game ID, date, and screenshot/video.
-- `server/dashboard.html`: dark 1080p-friendly status page supporting Steam Input keyboard mapping and the browser Gamepad API. Shows counts and per-media statuses, not yet native Godot.
+- A fullscreen Qt gallery designed for Steam Big Picture, with large previews, readable text, visible focus and controller/key prompts.
+- Screenshots from Steam's native library and your export folder, grouped as one capture when both copies exist.
+- Local photo viewing, Immich previews, and streamed video playback with pause, seek, volume and capture browsing.
+- Background backup, one-time device pairing, and a local diagnostics screen.
+- Explicit, recoverable removal of local copies, Immich copies, or both. Local screenshot removal includes matched Steam originals, exports and thumbnails. Server inbox backups are retained.
 
-## Requirements
+## Install the Linux client
 
-- Family server (`192.168.1.27`): Linux, Docker and Docker Compose, network access to Immich.
-- Steam client (Xubuntu): Python 3, systemd user session, outbound LAN access to `192.168.1.27:8787`.
-- Immich API key with permission to upload assets, create/edit albums, and create/use tags.
+Download `steam-personal-cloud-client_0.3.0~beta.1_amd64.deb` and its checksum from [the beta release](https://github.com/improper/steam-personal-cloud/releases/tag/v0.3.0-beta.1).
 
-## Set up the family server
+```bash
+sha256sum -c steam-personal-cloud-client_0.3.0~beta.1_amd64.deb.sha256
+sudo apt install ./steam-personal-cloud-client_0.3.0~beta.1_amd64.deb
+steam-personal-cloud-setup
+```
+
+Setup asks for your backup server URL, a one-time pairing code, Steam userdata account ID, capture folders and an optional upload speed limit. If there is one Steam userdata account, setup suggests it. This ID is the local directory name under Steam's `userdata`, not your Steam64 ID. Existing pairing and sync history are preserved when upgrading.
+
+Add **Steam Personal Cloud Gallery** as a non-Steam game. Alternatively, select `/usr/bin/steam-personal-cloud-gallery` and set its launch options to `--fullscreen`. Launch it through Steam to use your Steam Input layout. Map arrows, Enter and Escape for navigation, select and back; the remaining shortcuts are in the [gallery guide](docs/native-gallery.md).
+
+The package includes its runtime; customers do not need to install Python packages. The gallery can display local photos while the server is unavailable. Recordings become playable once the server assembles them and Immich accepts them.
+
+## Set up the backup server
+
+The beta server uses Docker Compose and an existing Immich installation. Deploy the server from the matching release tag; server setup is an administrator task, separate from installing the client.
 
 ```bash
 git clone https://github.com/improper/steam-personal-cloud.git
 cd steam-personal-cloud
-bash scripts/setup-host.sh   # prompts for bind IP + port, Immich URL, API key, album, storage
+git checkout v0.3.0-beta.1
+bash scripts/setup-host.sh
 docker compose up -d --build
 docker compose logs -f personal-cloud
 ```
 
-Set `SPC_BIND_PORT` if port 8787 is unavailable; only the host port changes (container still listens on 8787). Keep `.env` **on the host**: never commit or publish it. If the folder is not writable by the container, adjust ownership of the storage folder to the container user. `SPC_TOKEN` in `.env` is the secret needed for each client to connect. Use a dedicated Immich API key for a dedicated account if desired.
+Choose a bind address accessible to your clients and enter an Immich URL that the container can reach. The default bind address is loopback. Keep the service on a trusted private network; use HTTPS or a VPN for connections across untrusted networks. The default host port is `8787`, configurable with `SPC_BIND_PORT`.
 
-## Install the Ubuntu release package (recommended)
+Keep `.env` and API keys outside version control. Open the server dashboard, sign in with the administrator token from `.env`, and select **Pair device**. Codes expire after five minutes and can be redeemed once. Clients receive scoped device tokens; the Immich API key remains on the server.
 
-Open [GitHub Releases](https://github.com/improper/steam-personal-cloud/releases), download the latest preview `steam-personal-cloud-client_*_all.deb`, and on Xubuntu run:
+For a Git-backed Komodo deployment, see [the deployment guide](docs/komodo.md). Pin the beta tag for a repeatable deployment rather than following a development branch.
 
-```bash
-sudo apt install ./steam-personal-cloud-client_*_all.deb
-steam-personal-cloud-setup
-```
+## Operation and support
 
-The setup command prompts for server URL, a one-time Fast Connect code, Steam account, capture directories and bandwidth setting (enter `0` for unlimited; this is the default). It enables your user systemd timer. The package places the Python agent and timer system-wide; future package upgrades update the agent without pairing again. It does not configure the server or upload files until you run setup. To view **local files, upload history and Immich processing**, add `Steam Personal Cloud` as a non-Steam game, or run `steam-personal-cloud-dashboard`.
-
-This is a **lightweight client with a browser-backed local dashboard**, not yet a native gamepad executable. Local recording reconstruction still occurs on the server.
-
-
-## Local library dashboard and setup repair (Ubuntu client)
-
-From the Xubuntu applications menu (or as a non-Steam game), open **Steam Personal Cloud**. It now starts a loopback-only dashboard at `http://127.0.0.1:18787/`, independently of the family server's UI. It shows eligible local files awaiting backup, files acknowledged by the server, grouped recording fragments, the last sync attempt and failures, plus the server's processing and Immich totals. The client token is used by the local Python process and **never passed to the browser**. The view uses a Chromium app window when available, otherwise the default browser. Local status does not yet offer byte-level real-time transfer progress, and fragment counts should not be confused with complete recordings.
-
-Run `steam-personal-cloud-setup` again to **check or repair an existing installation, change source folders/bandwidth, or re-pair**. Existing pairing and local sync history are preserved unless you explicitly re-pair; changes are backed up and saved only after confirmation. Expired codes and offline-server errors can be retried without restarting the entire wizard. The wizard checks server health before enrollment. To trigger a manual sync use `systemctl --user start steam-personal-cloud-sync.service`.
-
-The local dashboard is read-only and listens only on `127.0.0.1:18787`; it does not open a new inbound service to the LAN.
-
-
-## Native Steam-like gallery (v0.3 preview)
-
-**Steam Personal Cloud Gallery** is a fullscreen-capable **native Qt6 Linux application**, separate from the technical **Steam Personal Cloud Diagnostics** browser dashboard. Install the newest Ubuntu `.deb`, then add `Steam Personal Cloud Gallery` to Steam from the Xubuntu Games menu, or browse to `/usr/bin/steam-personal-cloud-gallery` as a non-Steam game. It displays large, selectable screenshot/video tiles, local/backup/Immich progress badges, optional details, and periodic refresh. The app supports Steam Input mapped to directional keys/Enter/Escape and tries the available Linux gamepad device (best effort). Screenshot viewing works before upload; video playback starts once processed by Immich using authenticated byte-range streaming. Deletion asks separately for **Local**, **Immich**, or **Both**, then confirms. Local media goes to Xubuntu Trash, Immich assets to Immich Trash (never forced permanent deletion). The original server inbox archive is not automatically erased.
-
-Details and hardware caveats are in [docs/native-gallery.md](docs/native-gallery.md). This is an unvalidated preview on the Xubuntu MacBook hardware until a real controller/recording playback test succeeds.
-
-
-### Gallery refinements in the current preview
-
-- Saved Steam clips and temporary fg/bg recordings are grouped into one capture when they represent the same source session; metadata-only files such as \`gamerecording.pb\` never become gallery videos.
-- The gallery requests **Immich thumbnails first** once an asset is available. If unavailable, it displays a matching Steam-generated local thumbnail if that file exists.
-- Media opens in the **same native Qt window**, with previous/next capture browsing, an immersive viewer that hides controls after inactivity, play/pause, replay, seek bar, ±10-second controls, mute and volume. An inline Settings screen remembers autoplay, control hiding, audio, and launch-fullscreen preferences. Video streams prefer Immich's transcoding and fall back to the original when conversion is not ready and the original codec is playable.
-- Large tile labels use the game title from Steam's installed app manifests, with capture date/time underneath. When no title can be resolved (e.g., a non-Steam game), a generic capture label replaces the raw identifier.
-- The client sends the game title with uploads; the server adds an Immich game-title tag and **optionally** updates the asset description (requires Immich \`asset.update\` permission). Existing asset tags retain the game ID and capture-date hierarchy; older captures need metadata backfill before they gain new title descriptions.
-- **Preparing for Immich** replaces the technical "Backed up" badge. File transfer details remain in the expandable advanced panel.
-
-Hardware playback and Steam-generated-thumbnail discovery still require testing on the Xubuntu game center. See [issue #10](https://github.com/improper/steam-personal-cloud/issues/10).
-
-## Set up the Xubuntu gamecenter from source (alternative)
-
-From the same clone (or a downloaded source archive):
+The client scans approximately once a minute and waits for recently changed files to settle before uploading. A speed limit of `0` means unlimited. Successfully acknowledged files are skipped, and failures retry on later scans.
 
 ```bash
-bash scripts/install-linux.sh    # prompts for server URL, short pairing code, account and paths
+# Request a scan
 systemctl --user start steam-personal-cloud-sync.service
+
+# Read recent upload results
 journalctl --user -u steam-personal-cloud-sync.service -n 50 --no-pager
+
+# Open local diagnostics
+steam-personal-cloud-dashboard
 ```
 
-Default media sources:
+Run `steam-personal-cloud-setup` again to repair pairing or change capture folders and bandwidth. Back up the client configuration before changing it. Include the client/server version and relevant error text when reporting a problem; remove credentials and personal paths from logs shared publicly.
 
-- `/home/gamecenter/Gameplay/Screenshots`
-- `/home/gamecenter/Gameplay/Recordings`
-- Steam local account directory `userdata/728364463` (used as a tag; this is *not* the Steam64 account ID).
+## Beta limitations
 
-For **Fast Connect**: log into the family-server dashboard with the admin `SPC_TOKEN`, click **Pair device**, and enter its one-time code when the client installer asks. The installer receives a random device token scoped to that client and Steam account; it saves that token with mode 0600. An existing token can still be entered using installer option 2. Each code expires after five minutes and cannot be redeemed twice.
+- Steam recording formats vary. Saved clips are supported, but rolling-buffer preservation and recordings spanning multiple DASH sessions still need broader validation. Keep local originals and another backup for important captures.
+- Deletion moves files and Immich assets to Trash. It does not purge server inbox archives. Steam owns its media catalogue and may retain entries after original and thumbnail files have been removed.
+- Controller numbering varies. Steam Input keyboard mappings are the reliable fallback. Steam Link client video has not been fully validated.
+- Immich may still be generating previews or transcodes after an asset is accepted.
+- Long-term library pagination and resumable file transfers are not included in this beta.
 
-The default upload speed is **unlimited** (`max_mib_per_second: 0`). Set a positive MiB/s value in `~/.config/steam-personal-cloud/client.json` if you prefer a cap. Existing client installations retain their saved setting after upgrades. Unlimited transfers can compete with games for Wi-Fi bandwidth and disk I/O.
-
-The user timer runs approximately once per minute. A first backfill of an existing recording may take a while over Wi-Fi. The client uploads its original fragments, **not a new MP4**.
-
-## Steam-friendly dashboard
-
-Visit `http://192.168.1.27:8787` (or the configured `SPC_BIND_PORT`) and sign in with the admin token to generate one-time pairing codes and inspect per-media states. Add a browser command opening that URL as a **non-Steam game** for controller navigation. Arrow keys / D-pad navigate, Enter / A activates focused buttons when supported. This v0.2 dashboard shows aggregate status, not a native standalone Linux app or frame-accurate transfer progress.
-
-## Operational notes
-
-- The upload protocol is a shared-token HTTP API **intended for trusted LANs only**. For remote clients, add HTTPS via a reverse proxy/VPN first; do not expose port 8787 publicly. Paired clients use per-device credentials scoped to their client name and Steam account. The original admin token continues to grant access to all clients, so keep it only on the server and in a trusted administration browser. Device revocation and HTTPS discovery are future work.
-- The server never deletes originals and does not automatically prune archives. Monitor disk usage (`storage/inbox`, `storage/processing`, SQLite). Enabling all background sessions can grow storage rapidly.
-- The receiver limits each individual file to 128 MiB by default, configurable via Compose. It does not currently support byte-range resume; a failed file resumes from the beginning on the next scan. Successfully uploaded files are skipped.
-- If a recording's `session.mpd` does not reference the backed-up fragments correctly, processing will show `Retrying` with an FFmpeg error. The stored source chunks remain untouched for recovery.
-- Status `In Immich` means Immich accepted the asset and tagging, **not** that Immich's own thumbnail or transcoding background jobs have finished.
-- Date tags reflect metadata parsing of the Steam filename (where recognized) or file mtime. Verify date and game names during the initial test.
-
-## Next
-
-Validate a real Steam DASH recording end-to-end, then strengthen rolling-buffer snapshots, transfer resume, client-specific credentials, Immich deep links, and a Godot native gamepad interface.
+See [the changelog](CHANGELOG.md), [gallery guide](docs/native-gallery.md), and [release build notes](docs/releasing.md). The source repository is published for visibility; that publication does not grant an open-source license.

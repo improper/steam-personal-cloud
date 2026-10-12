@@ -16,7 +16,7 @@ import local_status
 
 class SetupTests(unittest.TestCase):
     def test_server_validation(self):
-        self.assertEqual(setup.server_url('http://192.168.1.27:8787/'), 'http://192.168.1.27:8787')
+        self.assertEqual(setup.server_url('http://backup.example.test:8787/'), 'http://backup.example.test:8787')
         with self.assertRaises(ValueError):
             setup.server_url('javascript:alert(1)')
         with self.assertRaises(ValueError):
