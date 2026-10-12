@@ -6,7 +6,7 @@ VERSION=${1:-0.3.0~beta.1}
 DIST=${SPC_DIST_DIR:-build/client/main.dist}
 ARCH=$(dpkg --print-architecture)
 # GitHub rewrites tildes in asset names; keep metadata and filenames separate.
-FILE_VERSION=${VERSION//~/.}
+FILE_VERSION=${VERSION//\~/.}
 test -x "$DIST/steam-personal-cloud" || { echo 'Run scripts/compile-client.sh first.' >&2; exit 1; }
 readelf -h "$DIST/steam-personal-cloud" >/dev/null
 for source in agent gallery_app gallery_model gallery_trash steam_screenshots setup local_status local_dashboard diagnostics main gamepad_linux; do

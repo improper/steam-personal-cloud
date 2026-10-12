@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 VERSION=${1:-0.3.0~beta.1}
 ARCH=$(dpkg --print-architecture)
-FILE_VERSION=${VERSION//~/.}
+FILE_VERSION=${VERSION//\~/.}
 package="dist/steam-personal-cloud-client_${FILE_VERSION}_${ARCH}.deb"
 root=$(mktemp -d)
 trap 'rm -rf "$root"' EXIT
