@@ -39,6 +39,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          sed "s|(README.md)|(https://github.com/improper/steam-personal-cloud/blob/$GITHUB_REF_NAME/README.md)|g" CHANGELOG.md > /tmp/release-notes.md
           gh release create "$GITHUB_REF_NAME" dist/*.deb dist/*.sha256 dist/*.tar \
             --verify-tag --prerelease --title "Steam Personal Cloud $GITHUB_REF_NAME" \
-            --notes-file CHANGELOG.md
+            --notes-file /tmp/release-notes.md

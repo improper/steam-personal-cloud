@@ -61,10 +61,14 @@ def self_test():
         window = Gallery(settings=QSettings(str(Path(directory) / 'settings.ini'), QSettings.Format.IniFormat))
         window.timer.stop()
         window.gamepad_timer.stop()
-        window.items = [MediaItem('screenshots/test.png', 'Example game', 'photo', 'waiting', '', '', 'screenshots/test.png', 0)]
+        photo = Path(directory) / 'test.webp'
+        photo.write_bytes(data.getvalue())
+        window.items = [MediaItem('screenshots/test.webp', 'Example game', 'photo', 'waiting', str(photo), '', 'screenshots/test.webp', 0)]
         window.render()
         window.open_item(window.items[0])
         app.processEvents()
+        if window.viewer.photo.original.isNull():
+            raise RuntimeError('Compiled viewer could not open a local WebP photo')
         if window.viewer.isWindow():
             raise RuntimeError('Viewer must remain in the gallery window')
         window.close_viewer()

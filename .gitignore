@@ -10,3 +10,5 @@ dist/
 
 build/
 .venv/
+
+nuitka-crash-report.xml

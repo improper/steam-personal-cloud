@@ -12,7 +12,7 @@ mkdir -p build/client
     --report=build/client/compilation-report.xml \
     --noinclude-dlls='PySide6/qt-plugins/imageformats/libqpdf.so' \
     --noinclude-dlls='libQt6Pdf.so*' \
-    --jobs="${SPC_BUILD_JOBS:-2}" --assume-yes-for-downloads \
+    --lto=no --jobs="${SPC_BUILD_JOBS:-2}" --assume-yes-for-downloads \
     --nofollow-import-to=PyQt6,PyQt5,PySide2,tkinter
 "$BUILD_PYTHON" scripts/use-system-libraries.py build/client/compilation-report.xml build/client/main.dist
 "$BUILD_PYTHON" scripts/collect-third-party-notices.py build/client/notices
