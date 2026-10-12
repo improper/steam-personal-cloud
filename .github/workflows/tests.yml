@@ -1,0 +1,62 @@
+name: Beta checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+    inputs:
+      deb_version:
+        type: string
+        default: '0.3.0~beta.1'
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install runtime dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libasound2t64 libpulse0
+      - name: Create isolated system Python environment
+        run: |
+          /usr/bin/python3 -m venv .venv
+          .venv/bin/python -m pip install -r client/requirements-build.txt -r server/requirements.txt httpx
+      - name: Test server, capture discovery and controller UI
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: .venv/bin/python -m unittest discover -s tests -v
+      - name: Check scripts and Python syntax
+        run: |
+          bash -n scripts/*.sh packaging/steam-personal-cloud-gallery packaging/steam-personal-cloud-setup packaging/steam-personal-cloud-dashboard
+          .venv/bin/python -m compileall -q client server scripts
+  compiled-package:
+    needs: tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build and runtime dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y build-essential python3-dev python3-venv libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libasound2t64 libpulse0
+      - name: Install pinned compiler inputs
+        run: |
+          /usr/bin/python3 -m venv .venv
+          .venv/bin/python -m pip install -r client/requirements-build.txt
+      - name: Compile and smoke-test the client
+        env:
+          SPC_BUILD_PYTHON: ${{ github.workspace }}/.venv/bin/python
+        run: |
+          export PATH="$PWD/.venv/bin:$PATH"
+          bash scripts/compile-client.sh
+      - name: Build and inspect the Debian package
+        env:
+          DEB_VERSION: ${{ inputs.deb_version || '0.3.0~beta.1' }}
+        run: |
+          bash scripts/build-client-deb.sh "$DEB_VERSION"
+          sudo apt-get install -y ./dist/steam-personal-cloud-client_${DEB_VERSION}_amd64.deb
+          bash scripts/check-client-package.sh "$DEB_VERSION"
+          sha256sum dist/steam-personal-cloud-third-party-sources.tar > dist/steam-personal-cloud-third-party-sources.tar.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: steam-personal-cloud-ubuntu-client
+          path: |
+            dist/*.deb
+            dist/*.sha256
+            dist/steam-personal-cloud-third-party-sources.tar
+          if-no-files-found: error

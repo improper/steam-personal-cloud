@@ -1,0 +1,14 @@
+.env
+storage/
+*.sqlite3
+__pycache__/
+*.pyc
+.pytest_cache/
+*.zip
+
+dist/
+
+build/
+.venv/
+
+nuitka-crash-report.xml

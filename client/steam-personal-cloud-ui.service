@@ -1,0 +1,12 @@
+[Unit]
+Description=Steam Personal Cloud local status dashboard
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/steam-personal-cloud/steam-personal-cloud proxy
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

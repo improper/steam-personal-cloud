@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+systemctl --user daemon-reload >/dev/null 2>&1 || true
+systemctl --user start steam-personal-cloud-ui.service >/dev/null 2>&1 || true
+exec /usr/lib/steam-personal-cloud/steam-personal-cloud gallery "$@"

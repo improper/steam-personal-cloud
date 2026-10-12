@@ -1,0 +1,9 @@
+# Pinned runtime and compiler inputs for the Linux beta artifact.
+PySide6-Essentials==6.11.2
+PySide6-Addons==6.11.2
+shiboken6==6.11.2
+Pillow==12.3.0
+Nuitka==4.2.2
+ordered-set==4.1.0
+zstandard==0.25.0
+patchelf==0.19.1.0

@@ -1,0 +1,45 @@
+name: Publish Linux beta
+on:
+  push:
+    tags: ['v[0-9]*-beta.*']
+permissions:
+  contents: write
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      deb_version: ${{ steps.version.outputs.deb_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify beta tag is on main and choose Debian version
+        id: version
+        run: |
+          git merge-base --is-ancestor HEAD origin/main
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$ ]]
+          version="${GITHUB_REF_NAME#v}"
+          test "$version" = "$(sed -n "s/^VERSION = '\(.*\)'/\1/p" client/main.py)"
+          echo "deb_version=${version/-beta./~beta.}" >> "$GITHUB_OUTPUT"
+  validate:
+    needs: version
+    uses: ./.github/workflows/tests.yml
+    with:
+      deb_version: ${{ needs.version.outputs.deb_version }}
+  publish:
+    needs: validate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: steam-personal-cloud-ubuntu-client
+          path: dist
+      - name: Publish compiled beta and corresponding third-party sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sed "s|(README.md)|(https://github.com/improper/steam-personal-cloud/blob/$GITHUB_REF_NAME/README.md)|g" CHANGELOG.md > /tmp/release-notes.md
+          gh release create "$GITHUB_REF_NAME" dist/*.deb dist/*.sha256 dist/*.tar \
+            --verify-tag --prerelease --title "Steam Personal Cloud $GITHUB_REF_NAME" \
+            --notes-file /tmp/release-notes.md

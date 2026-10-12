@@ -1,0 +1,11 @@
+[Unit]
+Description=Steam Personal Cloud - scan every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=1min
+Persistent=true
+Unit=steam-personal-cloud-sync.service
+
+[Install]
+WantedBy=timers.target

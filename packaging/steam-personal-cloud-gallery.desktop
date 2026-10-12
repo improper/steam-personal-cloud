@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Steam Personal Cloud Gallery
+GenericName=Steam Capture Gallery
+Comment=Browse game screenshots and watch saved recordings
+Exec=steam-personal-cloud-gallery --fullscreen
+Icon=steam-personal-cloud
+Terminal=false
+Categories=Game;Graphics;Video;
+StartupNotify=true
+Keywords=Steam;Gallery;Screenshot;Recording;Immich;
