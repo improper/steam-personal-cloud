@@ -51,7 +51,7 @@ jobs:
           bash scripts/build-client-deb.sh "$DEB_VERSION"
           sudo apt-get install -y ./dist/steam-personal-cloud-client_${DEB_VERSION}_amd64.deb
           bash scripts/check-client-package.sh "$DEB_VERSION"
-          sha256sum dist/steam-personal-cloud-third-party-sources.tar > dist/steam-personal-cloud-third-party-sources.tar.sha256
+          (cd dist && sha256sum steam-personal-cloud-third-party-sources.tar > steam-personal-cloud-third-party-sources.tar.sha256 && sha256sum -c steam-personal-cloud-third-party-sources.tar.sha256)
       - uses: actions/upload-artifact@v4
         with:
           name: steam-personal-cloud-ubuntu-client

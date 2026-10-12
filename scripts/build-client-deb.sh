@@ -45,5 +45,5 @@ Description: Steam Personal Cloud compiled gallery and backup client
 CONTROL
 install -d dist
 dpkg-deb --root-owner-group --build "$pkg" "dist/steam-personal-cloud-client_${VERSION}_${ARCH}.deb"
-sha256sum "dist/steam-personal-cloud-client_${VERSION}_${ARCH}.deb" > "dist/steam-personal-cloud-client_${VERSION}_${ARCH}.deb.sha256"
+(cd dist && sha256sum "steam-personal-cloud-client_${VERSION}_${ARCH}.deb" > "steam-personal-cloud-client_${VERSION}_${ARCH}.deb.sha256")
 echo "Built dist/steam-personal-cloud-client_${VERSION}_${ARCH}.deb"

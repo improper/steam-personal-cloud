@@ -6,6 +6,7 @@ ARCH=$(dpkg --print-architecture)
 package="dist/steam-personal-cloud-client_${VERSION}_${ARCH}.deb"
 root=$(mktemp -d)
 trap 'rm -rf "$root"' EXIT
+(cd dist && sha256sum -c "steam-personal-cloud-client_${VERSION}_${ARCH}.deb.sha256")
 dpkg-deb --info "$package"
 dpkg-deb -x "$package" "$root"
 bundle="$root/usr/lib/steam-personal-cloud"
