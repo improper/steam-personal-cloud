@@ -1,7 +1,7 @@
 name: Beta checks
 on:
   push:
-    branches: ['feature/initial-prototype', main]
+    branches: [main]
   pull_request:
   workflow_call:
     inputs:
@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install runtime dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libasound2t64
+        run: sudo apt-get update -qq && sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libasound2t64 libpulse0
       - name: Create isolated system Python environment
         run: |
           /usr/bin/python3 -m venv .venv
@@ -33,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install build and runtime dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y build-essential python3-dev python3-venv libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libasound2t64
+        run: sudo apt-get update -qq && sudo apt-get install -y build-essential python3-dev python3-venv libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libasound2t64 libpulse0
       - name: Install pinned compiler inputs
         run: |
           /usr/bin/python3 -m venv .venv

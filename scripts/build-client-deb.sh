@@ -38,7 +38,7 @@ Section: games
 Priority: optional
 Architecture: $ARCH
 Maintainer: Steam Personal Cloud <4887071+tylers-username@users.noreply.github.com>
-Depends: libc6 (>= 2.39), libstdc++6, libglib2.0-0t64, libx11-6, libxcb1, libxcb-cursor0, libxkbcommon0, libxkbcommon-x11-0, libegl1, libgl1, libfontconfig1, libdbus-1-3, libasound2t64, libssl3t64, libffi8, libbz2-1.0, liblzma5, libsqlite3-0, zlib1g, libcrypt1, libuuid1, libzstd1, libcups2t64, libdrm2, libgbm1, libudev1, libexpat1, libfreetype6, libxrender1, libxext6, libxcb-icccm4, libxcb-image0, libxcb-keysyms1, libxcb-render-util0, libxcb-xinerama0, libxcb-xkb1, libxcb-randr0, libxcb-shape0, libxcb-sync1, libxcb-xfixes0, libxcb-render0, libxcb-shm0, libwayland-client0, libwayland-cursor0, libwayland-egl1, systemd, xdg-utils
+Depends: libc6 (>= 2.39), libstdc++6, libglib2.0-0t64, libx11-6, libxcb1, libxcb-cursor0, libxkbcommon0, libxkbcommon-x11-0, libegl1, libgl1, libfontconfig1, libdbus-1-3, libasound2t64, libpulse0, libssl3t64, libffi8, libbz2-1.0, liblzma5, libsqlite3-0, zlib1g, libcrypt1, libuuid1, libzstd1, libcups2t64, libdrm2, libgbm1, libudev1, libexpat1, libfreetype6, libxrender1, libxext6, libxcb-icccm4, libxcb-image0, libxcb-keysyms1, libxcb-render-util0, libxcb-xinerama0, libxcb-xkb1, libxcb-randr0, libxcb-shape0, libxcb-sync1, libxcb-xfixes0, libxcb-render0, libxcb-shm0, libwayland-client0, libwayland-cursor0, libwayland-egl1, systemd, xdg-utils
 Description: Steam Personal Cloud compiled gallery and backup client
  Controller-friendly screenshot and recording library for Steam Big Picture,
  with background backup and authenticated Immich playback.
