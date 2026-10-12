@@ -5,6 +5,8 @@ VERSION=${1:-0.3.0~beta.1}
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(~[a-z0-9.]+)?$ ]] || { echo 'Invalid Debian version' >&2; exit 1; }
 DIST=${SPC_DIST_DIR:-build/client/main.dist}
 ARCH=$(dpkg --print-architecture)
+# GitHub rewrites tildes in asset names; keep metadata and filenames separate.
+FILE_VERSION=${VERSION//~/.}
 test -x "$DIST/steam-personal-cloud" || { echo 'Run scripts/compile-client.sh first.' >&2; exit 1; }
 readelf -h "$DIST/steam-personal-cloud" >/dev/null
 for source in agent gallery_app gallery_model gallery_trash steam_screenshots setup local_status local_dashboard diagnostics main gamepad_linux; do
@@ -44,6 +46,6 @@ Description: Steam Personal Cloud compiled gallery and backup client
  with background backup and authenticated Immich playback.
 CONTROL
 install -d dist
-dpkg-deb --root-owner-group --build "$pkg" "dist/steam-personal-cloud-client_${VERSION}_${ARCH}.deb"
-(cd dist && sha256sum "steam-personal-cloud-client_${VERSION}_${ARCH}.deb" > "steam-personal-cloud-client_${VERSION}_${ARCH}.deb.sha256")
-echo "Built dist/steam-personal-cloud-client_${VERSION}_${ARCH}.deb"
+dpkg-deb --root-owner-group --build "$pkg" "dist/steam-personal-cloud-client_${FILE_VERSION}_${ARCH}.deb"
+(cd dist && sha256sum "steam-personal-cloud-client_${FILE_VERSION}_${ARCH}.deb" > "steam-personal-cloud-client_${FILE_VERSION}_${ARCH}.deb.sha256")
+echo "Built dist/steam-personal-cloud-client_${FILE_VERSION}_${ARCH}.deb"

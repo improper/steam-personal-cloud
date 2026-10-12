@@ -49,7 +49,7 @@ jobs:
           DEB_VERSION: ${{ inputs.deb_version || '0.3.0~beta.1' }}
         run: |
           bash scripts/build-client-deb.sh "$DEB_VERSION"
-          sudo apt-get install -y ./dist/steam-personal-cloud-client_${DEB_VERSION}_amd64.deb
+          sudo apt-get install -y ./dist/*.deb
           bash scripts/check-client-package.sh "$DEB_VERSION"
           (cd dist && sha256sum steam-personal-cloud-third-party-sources.tar > steam-personal-cloud-third-party-sources.tar.sha256 && sha256sum -c steam-personal-cloud-third-party-sources.tar.sha256)
       - uses: actions/upload-artifact@v4

@@ -14,11 +14,11 @@ Steam Personal Cloud brings Steam screenshots and saved recordings into a native
 
 ## Install the Linux client
 
-Download `steam-personal-cloud-client_0.3.0~beta.1_amd64.deb` and its checksum from [the beta release](https://github.com/improper/steam-personal-cloud/releases/tag/v0.3.0-beta.1).
+Download `steam-personal-cloud-client_0.3.0.beta.1_amd64.deb` and its checksum from [the beta release](https://github.com/improper/steam-personal-cloud/releases/tag/v0.3.0-beta.1).
 
 ```bash
-sha256sum -c steam-personal-cloud-client_0.3.0~beta.1_amd64.deb.sha256
-sudo apt install ./steam-personal-cloud-client_0.3.0~beta.1_amd64.deb
+sha256sum -c steam-personal-cloud-client_0.3.0.beta.1_amd64.deb.sha256
+sudo apt install ./steam-personal-cloud-client_0.3.0.beta.1_amd64.deb
 steam-personal-cloud-setup
 ```
 

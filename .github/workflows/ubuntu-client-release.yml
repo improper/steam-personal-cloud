@@ -41,6 +41,16 @@ jobs:
         run: |
           (cd dist && sha256sum -c ./*.sha256)
           sed "s|(README.md)|(https://github.com/improper/steam-personal-cloud/blob/$GITHUB_REF_NAME/README.md)|g" CHANGELOG.md > /tmp/release-notes.md
-          gh release create "$GITHUB_REF_NAME" dist/*.deb dist/*.sha256 dist/*.tar \
-            --verify-tag --prerelease --title "Steam Personal Cloud $GITHUB_REF_NAME" \
-            --notes-file /tmp/release-notes.md
+          if gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft > /tmp/release-draft; then
+            test "$(cat /tmp/release-draft)" = true
+            gh release upload "$GITHUB_REF_NAME" dist/*.deb dist/*.sha256 dist/*.tar --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/*.deb dist/*.sha256 dist/*.tar \
+              --verify-tag --draft --prerelease --title "Steam Personal Cloud $GITHUB_REF_NAME" \
+              --notes-file /tmp/release-notes.md
+          fi
+          find dist -maxdepth 1 -type f -printf '%f\n' | sort > /tmp/expected-assets
+          gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' | sort > /tmp/uploaded-assets
+          diff -u /tmp/expected-assets /tmp/uploaded-assets
+          gh release edit "$GITHUB_REF_NAME" --draft=false --prerelease \
+            --title "Steam Personal Cloud $GITHUB_REF_NAME" --notes-file /tmp/release-notes.md
